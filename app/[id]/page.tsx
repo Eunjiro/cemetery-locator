@@ -789,92 +789,6 @@ export default function GraveLocatorPage() {
           </div>
         )}
 
-        {/* Compass and Direction Indicator */}
-        {showDirections && userLocation && (
-          <div className="mb-3 sm:mb-4 bg-gradient-to-br from-blue-50 to-indigo-50 border-2 border-blue-200 rounded-lg sm:rounded-xl p-3 sm:p-4">
-            <div className="flex items-center justify-between gap-4">
-              {/* Compass */}
-              <div className="flex flex-col items-center">
-                <div className="text-xs text-gray-600 mb-2 font-medium">Your Direction</div>
-                <div className="relative w-20 h-20 sm:w-24 sm:h-24">
-                  {/* Compass Circle */}
-                  <div className="absolute inset-0 rounded-full bg-white border-4 border-blue-500 shadow-lg">
-                    {/* Cardinal directions */}
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <div className="relative w-full h-full">
-                        <div className="absolute top-1 left-1/2 -translate-x-1/2 text-xs font-bold text-red-600">N</div>
-                        <div className="absolute bottom-1 left-1/2 -translate-x-1/2 text-xs font-bold text-gray-500">S</div>
-                        <div className="absolute right-1 top-1/2 -translate-y-1/2 text-xs font-bold text-gray-500">E</div>
-                        <div className="absolute left-1 top-1/2 -translate-y-1/2 text-xs font-bold text-gray-500">W</div>
-                      </div>
-                    </div>
-                    {/* Compass Needle - points to user's heading */}
-                    <div 
-                      className="absolute inset-0 flex items-center justify-center transition-transform duration-500"
-                      style={{ transform: `rotate(${userHeading || 0}deg)` }}
-                    >
-                      <div className="relative w-1 h-16 sm:h-20">
-                        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-b-8 border-l-transparent border-r-transparent border-b-red-600"></div>
-                        <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-8 border-l-transparent border-r-transparent border-t-gray-400"></div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <div className="mt-2 text-sm font-bold text-gray-900">
-                  {userHeading !== null ? `${Math.round(userHeading)}° ${getCardinalDirection(userHeading)}` : 'Calibrating...'}
-                </div>
-              </div>
-
-              {/* Direction Indicator */}
-              {targetBearing !== null && userHeading !== null && (
-                <div className="flex-1 flex flex-col items-center justify-center">
-                  <div className="text-xs text-gray-600 mb-2 font-medium">Turn Direction</div>
-                  <div className="relative">
-                    {/* Turn Arrow */}
-                    {(() => {
-                      const turnDir = getTurnDirection(userHeading, targetBearing);
-                      let diff = targetBearing - userHeading;
-                      if (diff > 180) diff -= 360;
-                      if (diff < -180) diff += 360;
-                      
-                      return (
-                        <div className="flex flex-col items-center">
-                          <svg className="w-16 h-16 sm:w-20 sm:h-20" viewBox="0 0 100 100">
-                            {turnDir === 'straight' ? (
-                              <g>
-                                <path d="M50 20 L50 80 M35 35 L50 20 L65 35" stroke="#10b981" strokeWidth="6" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
-                              </g>
-                            ) : turnDir === 'left' ? (
-                              <g>
-                                <path d="M70 50 Q50 50 35 35 M35 50 L35 35 L50 35" stroke="#f59e0b" strokeWidth="6" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
-                              </g>
-                            ) : (
-                              <g>
-                                <path d="M30 50 Q50 50 65 35 M65 50 L65 35 L50 35" stroke="#f59e0b" strokeWidth="6" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
-                              </g>
-                            )}
-                          </svg>
-                          <div className={`text-lg font-bold mt-1 ${
-                            turnDir === 'straight' ? 'text-green-600' : 'text-amber-600'
-                          }`}>
-                            {turnDir === 'straight' ? 'Straight' : turnDir === 'left' ? 'Turn Left' : 'Turn Right'}
-                          </div>
-                          <div className="text-xs text-gray-600 mt-1">
-                            Target: {Math.round(targetBearing)}° {getCardinalDirection(targetBearing)}
-                          </div>
-                          <div className="text-xs text-gray-500">
-                            ({Math.abs(Math.round(diff))}° {diff > 0 ? 'right' : 'left'})
-                          </div>
-                        </div>
-                      );
-                    })()}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
         {/* Route Information */}
         {routeInfo && showDirections && (
           <div className="mb-3 sm:mb-4 bg-white border-2 border-gray-300 rounded-lg sm:rounded-xl p-3 sm:p-4">
@@ -975,6 +889,75 @@ export default function GraveLocatorPage() {
             route={route}
             centerCoordinates={centerCoordinates}
           />
+          
+          {/* Floating Compass Overlay on Map */}
+          {showDirections && userHeading !== null && (
+            <div className="absolute top-4 right-4 z-[1000] pointer-events-none">
+              <div className="bg-white/95 backdrop-blur-sm rounded-full shadow-lg p-2 border-2 border-blue-500">
+                <div className="relative w-16 h-16">
+                  {/* Cardinal directions */}
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="relative w-full h-full">
+                      <div className="absolute top-0 left-1/2 -translate-x-1/2 text-[10px] font-bold text-red-600">N</div>
+                      <div className="absolute bottom-0 left-1/2 -translate-x-1/2 text-[10px] font-bold text-gray-400">S</div>
+                      <div className="absolute right-0 top-1/2 -translate-y-1/2 text-[10px] font-bold text-gray-400">E</div>
+                      <div className="absolute left-0 top-1/2 -translate-y-1/2 text-[10px] font-bold text-gray-400">W</div>
+                    </div>
+                  </div>
+                  {/* Compass Needle */}
+                  <div 
+                    className="absolute inset-0 flex items-center justify-center transition-transform duration-300"
+                    style={{ transform: `rotate(${userHeading}deg)` }}
+                  >
+                    <div className="relative w-1 h-14">
+                      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-0 h-0 border-l-[3px] border-r-[3px] border-b-[6px] border-l-transparent border-r-transparent border-b-red-600"></div>
+                      <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-0 h-0 border-l-[3px] border-r-[3px] border-t-[6px] border-l-transparent border-r-transparent border-t-gray-400"></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="mt-1 text-center text-[10px] font-bold text-gray-900 bg-white/95 backdrop-blur-sm rounded px-2 py-0.5 shadow">
+                {Math.round(userHeading)}° {getCardinalDirection(userHeading)}
+              </div>
+            </div>
+          )}
+
+          {/* Floating Turn Direction Indicator on Map */}
+          {showDirections && targetBearing !== null && userHeading !== null && (
+            <div className="absolute top-4 left-4 z-[1000] pointer-events-none">
+              {(() => {
+                const turnDir = getTurnDirection(userHeading, targetBearing);
+                let diff = targetBearing - userHeading;
+                if (diff > 180) diff -= 360;
+                if (diff < -180) diff += 360;
+                
+                return (
+                  <div className="bg-white/95 backdrop-blur-sm rounded-lg shadow-lg p-2 border-2 border-blue-500">
+                    <svg className="w-12 h-12" viewBox="0 0 100 100">
+                      {turnDir === 'straight' ? (
+                        <g>
+                          <path d="M50 20 L50 80 M35 35 L50 20 L65 35" stroke="#10b981" strokeWidth="8" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+                        </g>
+                      ) : turnDir === 'left' ? (
+                        <g>
+                          <path d="M70 50 Q50 50 35 35 M35 50 L35 35 L50 35" stroke="#f59e0b" strokeWidth="8" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+                        </g>
+                      ) : (
+                        <g>
+                          <path d="M30 50 Q50 50 65 35 M65 50 L65 35 L50 35" stroke="#f59e0b" strokeWidth="8" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+                        </g>
+                      )}
+                    </svg>
+                    <div className={`text-[10px] font-bold text-center mt-1 ${
+                      turnDir === 'straight' ? 'text-green-600' : 'text-amber-600'
+                    }`}>
+                      {turnDir === 'straight' ? 'STRAIGHT' : turnDir === 'left' ? 'LEFT' : 'RIGHT'}
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          )}
         </div>
       </div>
     </div>
