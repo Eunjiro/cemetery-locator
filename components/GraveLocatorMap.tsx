@@ -136,11 +136,33 @@ export default function GraveLocatorMap({
   const [map, setMap] = useState<L.Map | null>(null);
   const highlightMarkerRef = useRef<L.Marker | null>(null);
   const mapContainerRef = useRef<HTMLDivElement>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const center: [number, number] = centerCoordinates || [cemetery.latitude, cemetery.longitude];
 
   useEffect(() => {
     setIsMounted(true);
   }, []);
+
+  // Handle fullscreen changes
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      const isNowFullscreen = !!document.fullscreenElement;
+      setIsFullscreen(isNowFullscreen);
+      
+      // Invalidate map size after fullscreen change
+      if (map) {
+        setTimeout(() => {
+          map.invalidateSize();
+        }, 100);
+      }
+    };
+    
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    };
+  }, [map]);
 
   // Handle highlighting marker
   useEffect(() => {
@@ -248,9 +270,23 @@ export default function GraveLocatorMap({
     return <div className="h-full w-full flex items-center justify-center text-gray-500">Loading map...</div>;
   }
 
+  const toggleFullscreen = async () => {
+    if (!mapContainerRef.current) return;
+    
+    try {
+      if (!document.fullscreenElement) {
+        await mapContainerRef.current.requestFullscreen();
+      } else {
+        await document.exitFullscreen();
+      }
+    } catch (error) {
+      console.error('Error toggling fullscreen:', error);
+    }
+  };
+
   return (
     <div className="h-full w-full relative">
-      {isMounted && (
+      <div ref={mapContainerRef} className={`h-full w-full ${isFullscreen ? 'bg-white' : ''}`}>
         <MapContainer
           key={`map-${cemetery.id}`}
           center={center}
@@ -307,10 +343,27 @@ export default function GraveLocatorMap({
           />
         )}
       </MapContainer>
-      )}
+
 
       {/* Floating Map Controls */}
       <div className="absolute top-2 right-2 z-[1000] flex flex-col gap-2">
+        {/* Fullscreen Toggle Button */}
+        <button
+          onClick={toggleFullscreen}
+          className="bg-white hover:bg-gray-100 active:bg-gray-200 text-gray-700 p-2.5 sm:p-2 rounded-lg sm:rounded-xl shadow-lg transition-colors touch-manipulation"
+          title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+        >
+          {isFullscreen ? (
+            <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          ) : (
+            <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+            </svg>
+          )}
+        </button>
+
         {/* Center to User Location Button */}
         {userLocation && (
           <button
@@ -319,10 +372,10 @@ export default function GraveLocatorMap({
                 map.flyTo(userLocation, 19, { duration: 1 });
               }
             }}
-            className="bg-white hover:bg-gray-100 text-gray-700 p-2 rounded-lg shadow-lg transition-colors"
+            className="bg-white hover:bg-gray-100 active:bg-gray-200 text-gray-700 p-2.5 sm:p-2 rounded-lg sm:rounded-xl shadow-lg transition-colors touch-manipulation"
             title="Center to my location"
           >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
             </svg>
@@ -342,10 +395,10 @@ export default function GraveLocatorMap({
               const lngSum = coords.reduce((sum: number, coord: [number, number]) => sum + coord[1], 0);
               map.flyTo([latSum / coords.length, lngSum / coords.length], 21, { duration: 1 });
             }}
-            className="bg-white hover:bg-gray-100 text-gray-700 p-2 rounded-lg shadow-lg transition-colors"
+            className="bg-white hover:bg-gray-100 active:bg-gray-200 text-gray-700 p-2.5 sm:p-2 rounded-lg sm:rounded-xl shadow-lg transition-colors touch-manipulation"
             title="Center to grave location"
           >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
             </svg>
           </button>
@@ -354,13 +407,14 @@ export default function GraveLocatorMap({
 
       {/* Legend - Only show when a plot is highlighted */}
       {highlightedPlotId && (
-        <div className="absolute bottom-2 right-2 sm:bottom-4 sm:right-4 bg-white rounded-lg shadow-lg p-2 sm:p-3 z-[1000]">
+        <div className="absolute bottom-2 right-2 sm:bottom-4 sm:right-4 bg-white rounded-lg sm:rounded-xl shadow-lg p-2 sm:p-3 z-[1000]">
           <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-red-500 animate-pulse"></div>
-            <span className="text-xs font-semibold text-gray-900">Located Grave</span>
+            <div className="w-3 h-3 rounded-full bg-red-500 animate-pulse flex-shrink-0"></div>
+            <span className="text-xs sm:text-sm font-semibold text-gray-900 whitespace-nowrap">Located Grave</span>
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }

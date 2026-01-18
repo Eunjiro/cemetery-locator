@@ -50,6 +50,9 @@ export default function GraveLocatorPage() {
   const [locationError, setLocationError] = useState<string | null>(null);
   const [searchTimeout, setSearchTimeout] = useState<NodeJS.Timeout | null>(null);
   const [centerCoordinates, setCenterCoordinates] = useState<[number, number] | null>(null);
+  const [voiceNavigationEnabled, setVoiceNavigationEnabled] = useState(false);
+  const [currentInstructionIndex, setCurrentInstructionIndex] = useState(0);
+  const [lastSpokenIndex, setLastSpokenIndex] = useState(-1);
 
   useEffect(() => {
     fetchCemeteryData();
@@ -279,6 +282,109 @@ export default function GraveLocatorPage() {
     setShowDirections(false);
     setHighlightedPlotId(null);
     setSelectedResult(null);
+    setVoiceNavigationEnabled(false);
+    setCurrentInstructionIndex(0);
+    setLastSpokenIndex(-1);
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+  };
+
+  const speakInstruction = (text: string) => {
+    if ('speechSynthesis' in window && voiceNavigationEnabled) {
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.rate = 0.9;
+      utterance.pitch = 1;
+      utterance.volume = 1;
+      window.speechSynthesis.speak(utterance);
+    }
+  };
+
+  const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+    const R = 6371e3; // Earth's radius in meters
+    const φ1 = lat1 * Math.PI / 180;
+    const φ2 = lat2 * Math.PI / 180;
+    const Δφ = (lat2 - lat1) * Math.PI / 180;
+    const Δλ = (lon2 - lon1) * Math.PI / 180;
+
+    const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+            Math.cos(φ1) * Math.cos(φ2) *
+            Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+    return R * c; // Distance in meters
+  };
+
+  // Track user location and speak instructions
+  useEffect(() => {
+    if (!voiceNavigationEnabled || !routeInfo || !userLocation || !route) return;
+
+    const instructions = routeInfo.instructions;
+    if (currentInstructionIndex >= instructions.length) return;
+
+    // Get the next waypoint from the route
+    let waypointIndex = 0;
+    let distanceSum = 0;
+    
+    for (let i = 0; i < instructions.length && i < currentInstructionIndex; i++) {
+      distanceSum += instructions[i].distance;
+    }
+
+    // Find approximate waypoint based on distance
+    let currentDistance = 0;
+    for (let i = 0; i < route.length - 1; i++) {
+      const segmentDistance = calculateDistance(
+        route[i][0], route[i][1],
+        route[i + 1][0], route[i + 1][1]
+      );
+      currentDistance += segmentDistance;
+      
+      if (currentDistance >= distanceSum) {
+        waypointIndex = i;
+        break;
+      }
+    }
+
+    const nextWaypoint = route[Math.min(waypointIndex + 5, route.length - 1)];
+    const distanceToNextPoint = calculateDistance(
+      userLocation[0], userLocation[1],
+      nextWaypoint[0], nextWaypoint[1]
+    );
+
+    // Speak instruction when within 30 meters and haven't spoken it yet
+    if (distanceToNextPoint < 30 && lastSpokenIndex !== currentInstructionIndex) {
+      const instruction = instructions[currentInstructionIndex];
+      const distanceText = instruction.distance > 100 
+        ? `in ${Math.round(instruction.distance)} meters`
+        : 'now';
+      
+      speakInstruction(`${instruction.instruction} ${distanceText}`);
+      setLastSpokenIndex(currentInstructionIndex);
+      
+      // Move to next instruction
+      if (distanceToNextPoint < 10) {
+        setTimeout(() => {
+          setCurrentInstructionIndex(prev => prev + 1);
+        }, 2000);
+      }
+    }
+  }, [userLocation, voiceNavigationEnabled, routeInfo, route, currentInstructionIndex, lastSpokenIndex]);
+
+  const toggleVoiceNavigation = () => {
+    if (!voiceNavigationEnabled && routeInfo) {
+      // Starting voice navigation
+      setVoiceNavigationEnabled(true);
+      setCurrentInstructionIndex(0);
+      setLastSpokenIndex(-1);
+      speakInstruction('Voice navigation started. Follow the instructions.');
+    } else {
+      // Stopping voice navigation
+      setVoiceNavigationEnabled(false);
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
+    }
   };
 
   if (loading) {
@@ -307,30 +413,30 @@ export default function GraveLocatorPage() {
     <div className="min-h-screen bg-gray-50">
       <Navbar />
       
-      <div className="w-full px-4 py-4">
+      <div className="w-full px-3 sm:px-4 py-3 sm:py-4">
         {/* Header */}
-        <div className="mb-4">
-          <h1 className="text-2xl font-bold text-gray-900">{cemetery.name} - Grave Locator</h1>
-          <p className="text-sm text-gray-600">Search for deceased persons and navigate to their graves</p>
+        <div className="mb-3 sm:mb-4">
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">{cemetery.name} - Grave Locator</h1>
+          <p className="text-xs sm:text-sm text-gray-600 mt-1">Search for deceased persons and navigate to their graves</p>
         </div>
 
         {/* Enable Location Button - Show if no location */}
         {!userLocation && !locationError && (
-          <div className="mb-4 bg-gradient-to-r from-blue-500 to-blue-600 rounded-lg p-6 text-white shadow-lg">
-            <div className="flex items-center justify-between">
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-2">
-                  <svg className="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 20 20">
+          <div className="mb-3 sm:mb-4 bg-gradient-to-r from-green-500 to-green-600 rounded-lg sm:rounded-xl p-4 sm:p-6 text-white shadow-lg">
+            <div className="flex flex-col sm:flex-row items-center sm:justify-between gap-4">
+              <div className="flex-1 text-center sm:text-left">
+                <div className="flex items-center justify-center sm:justify-start gap-2 mb-2">
+                  <svg className="w-5 h-5 sm:w-6 sm:h-6 text-white" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
                   </svg>
-                  <h3 className="text-xl font-bold">Enable Location Access</h3>
+                  <h3 className="text-lg sm:text-xl font-bold">Enable Location Access</h3>
                 </div>
-                <p className="text-blue-100 text-sm mb-4">
+                <p className="text-green-100 text-xs sm:text-sm mb-3 sm:mb-4">
                   Click the button below to allow location access. Your browser will show a permission prompt at the top.
                 </p>
                 <button
                   onClick={requestLocation}
-                  className="bg-white text-blue-600 px-8 py-3 rounded-lg font-bold text-lg hover:bg-blue-50 transition-all shadow-md hover:shadow-xl transform hover:scale-105 flex items-center gap-2 justify-center"
+                  className="bg-white text-green-600 px-6 py-3 rounded-lg font-bold text-base sm:text-lg hover:bg-green-50 active:bg-green-100 transition-all shadow-md hover:shadow-xl active:scale-95 flex items-center gap-2 justify-center mx-auto sm:mx-0 touch-manipulation"
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
@@ -338,7 +444,7 @@ export default function GraveLocatorPage() {
                   Allow Location Access
                 </button>
               </div>
-              <svg className="w-24 h-24 ml-4 opacity-50" fill="currentColor" viewBox="0 0 20 20">
+              <svg className="hidden sm:block w-16 h-16 sm:w-24 sm:h-24 ml-4 opacity-50" fill="currentColor" viewBox="0 0 20 20">
                 <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
               </svg>
             </div>
@@ -347,31 +453,31 @@ export default function GraveLocatorPage() {
 
         {/* Location Status */}
         {locationError && locationError === 'HTTPS_REQUIRED' ? (
-          <div className="mb-4 bg-orange-50 border-l-4 border-orange-500 rounded p-4">
-            <div className="flex items-center">
-              <svg className="w-5 h-5 text-orange-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="mb-3 sm:mb-4 bg-orange-50 border-l-4 border-orange-500 rounded p-3 sm:p-4">
+            <div className="flex items-start">
+              <svg className="w-5 h-5 text-orange-600 mr-2 sm:mr-3 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
               </svg>
               <div>
-                <h3 className="font-medium text-orange-900">Secure Connection Required</h3>
-                <p className="text-sm text-orange-800 mt-1">
+                <h3 className="font-medium text-orange-900 text-sm sm:text-base">Secure Connection Required</h3>
+                <p className="text-xs sm:text-sm text-orange-800 mt-1">
                   Location access requires HTTPS. Please contact your administrator.
                 </p>
               </div>
             </div>
           </div>
         ) : locationError && (
-          <div className="mb-4 bg-red-50 border-l-4 border-red-500 rounded p-4">
-            <div className="flex items-center">
-              <svg className="w-5 h-5 text-red-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="mb-3 sm:mb-4 bg-red-50 border-l-4 border-red-500 rounded p-3 sm:p-4">
+            <div className="flex items-start">
+              <svg className="w-5 h-5 text-red-600 mr-2 sm:mr-3 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
               </svg>
-              <div>
-                <h3 className="font-medium text-red-900">Location Access Blocked</h3>
-                <p className="text-sm text-red-800 mt-1">{locationError}</p>
+              <div className="flex-1">
+                <h3 className="font-medium text-red-900 text-sm sm:text-base">Location Access Blocked</h3>
+                <p className="text-xs sm:text-sm text-red-800 mt-1">{locationError}</p>
                 <button
                   onClick={requestLocation}
-                  className="mt-2 text-sm text-red-700 hover:text-red-900 underline font-medium"
+                  className="mt-2 text-xs sm:text-sm text-red-700 hover:text-red-900 active:text-red-950 underline font-medium touch-manipulation"
                 >
                   Try Again
                 </button>
@@ -381,7 +487,7 @@ export default function GraveLocatorPage() {
         )}
 
         {/* Search Bar */}
-        <div className="mb-4 relative z-50">
+        <div className="mb-3 sm:mb-4 relative z-50">
           <form onSubmit={handleSearch} className="relative">
             <div className="relative">
               <input
@@ -394,7 +500,7 @@ export default function GraveLocatorPage() {
                   }
                 }}
                 placeholder="Search by name (e.g., John Doe)"
-                className="w-full px-4 py-3 pr-12 border-2 border-gray-300 rounded-lg focus:outline-none focus:border-blue-500 text-base z-50"
+                className="w-full px-4 py-3 sm:py-3.5 pr-12 border-2 border-gray-300 rounded-lg sm:rounded-xl focus:outline-none focus:border-blue-500 text-sm sm:text-base text-gray-900 placeholder:text-gray-500 bg-white z-50 touch-manipulation"
                 autoComplete="off"
               />
               {isSearching && (
@@ -413,10 +519,10 @@ export default function GraveLocatorPage() {
                     setSearchResults([]);
                     setShowSearchResults(false);
                   }}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 bg-gray-200 hover:bg-gray-300 text-gray-700 p-2 rounded-lg transition-colors"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 bg-gray-200 hover:bg-gray-300 active:bg-gray-400 text-gray-700 p-2.5 rounded-lg transition-colors touch-manipulation"
                   title="Clear search"
                 >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </button>
@@ -425,31 +531,31 @@ export default function GraveLocatorPage() {
 
             {/* Search Results */}
             {showSearchResults && searchResults.length > 0 && (
-              <div className="absolute top-full left-0 right-0 mt-2 bg-white border-2 border-gray-300 rounded-lg shadow-xl max-h-96 overflow-y-auto z-[100]">
+              <div className="absolute top-full left-0 right-0 mt-2 bg-white border-2 border-gray-300 rounded-lg sm:rounded-xl shadow-xl max-h-[60vh] sm:max-h-96 overflow-y-auto z-[100]">
                 {searchResults.map((result, index) => (
                   <button
                     key={`${result.id}-${index}`}
                     onClick={() => handleSelectSearchResult(result)}
-                    className="w-full p-4 text-left hover:bg-blue-50 border-b border-gray-200 last:border-b-0 transition-colors"
+                    className="w-full p-3 sm:p-4 text-left hover:bg-blue-50 active:bg-blue-100 border-b border-gray-200 last:border-b-0 transition-colors touch-manipulation"
                   >
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <div className="font-bold text-gray-900 text-lg">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="font-bold text-gray-900 text-base sm:text-lg truncate">
                           {result.first_name} {result.last_name}
                         </div>
-                        <div className="text-sm text-gray-600 mt-1 space-y-1">
-                          <div>
+                        <div className="text-xs sm:text-sm text-gray-600 mt-1 space-y-1">
+                          <div className="truncate">
                             <span className="font-semibold">Born:</span> {new Date(result.date_of_birth).toLocaleDateString()} | 
-                            <span className="font-semibold ml-2">Died:</span> {new Date(result.date_of_death).toLocaleDateString()}
+                            <span className="font-semibold ml-1">Died:</span> {new Date(result.date_of_death).toLocaleDateString()}
                           </div>
-                          <div>
+                          <div className="truncate">
                             <span className="font-semibold">Plot:</span> {result.plot_number} | 
-                            <span className="font-semibold ml-2">Layer:</span> {result.layer || 1}
+                            <span className="font-semibold ml-1">Layer:</span> {result.layer || 1}
                           </div>
                         </div>
                       </div>
-                      <div className="ml-4 text-blue-600 font-medium text-sm whitespace-nowrap">
-                        View Location →
+                      <div className="ml-2 text-blue-600 font-medium text-xs sm:text-sm whitespace-nowrap flex-shrink-0">
+                        View →
                       </div>
                     </div>
                   </button>
@@ -458,10 +564,10 @@ export default function GraveLocatorPage() {
             )}
 
             {showSearchResults && searchResults.length === 0 && !isSearching && (
-              <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-300 rounded-lg shadow-xl p-6 z-[100]">
+              <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-300 rounded-lg sm:rounded-xl shadow-xl p-4 sm:p-6 z-[100]">
                 <div className="text-center">
-                  <p className="text-gray-700 font-medium">No results found</p>
-                  <p className="text-gray-500 text-sm mt-1">
+                  <p className="text-gray-700 font-medium text-sm sm:text-base">No results found</p>
+                  <p className="text-gray-500 text-xs sm:text-sm mt-1">
                     No deceased persons found matching &quot;{searchQuery}&quot;
                   </p>
                 </div>
@@ -472,17 +578,26 @@ export default function GraveLocatorPage() {
 
         {/* Navigation Controls */}
         {selectedResult && (
-          <div className="mb-4 bg-blue-50 border-2 border-blue-300 rounded-lg p-4">
-            <div className="flex items-center justify-between mb-3">
-              <div>
-                <h3 className="font-bold text-blue-900">
+          <div className="mb-3 sm:mb-4 bg-green-50 border-2 border-green-300 rounded-lg sm:rounded-xl p-3 sm:p-4">
+            <div className="flex items-start sm:items-center justify-between mb-3 gap-2">
+              <div className="flex-1 min-w-0">
+                <h3 className="font-bold text-green-900 text-sm sm:text-base truncate">
                   {selectedResult.first_name} {selectedResult.last_name}
                 </h3>
-                <p className="text-sm text-blue-700">Plot: {selectedResult.plot_number}</p>
+                <div className="text-xs sm:text-sm text-green-700 space-y-0.5 mt-1">
+                  <div>
+                    <span className="font-semibold">Born:</span> {new Date(selectedResult.date_of_birth).toLocaleDateString()} | 
+                    <span className="font-semibold ml-1">Died:</span> {new Date(selectedResult.date_of_death).toLocaleDateString()}
+                  </div>
+                  <div>
+                    <span className="font-semibold">Plot:</span> {selectedResult.plot_number} | 
+                    <span className="font-semibold ml-1">Layer:</span> {selectedResult.layer || 1}
+                  </div>
+                </div>
               </div>
               <button
                 onClick={clearRoute}
-                className="text-blue-600 hover:text-blue-800 font-medium text-sm"
+                className="text-green-600 hover:text-green-800 active:text-green-900 font-medium text-xs sm:text-sm px-2 py-1 touch-manipulation flex-shrink-0"
               >
                 Clear ✕
               </button>
@@ -492,10 +607,10 @@ export default function GraveLocatorPage() {
             <div className="flex gap-2 mb-3">
               <button
                 onClick={() => setNavigationMode('foot-walking')}
-                className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                className={`flex-1 px-2 sm:px-3 py-2.5 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors touch-manipulation ${
                   navigationMode === 'foot-walking'
                     ? 'bg-blue-600 text-white'
-                    : 'bg-white text-gray-700 hover:bg-gray-100'
+                    : 'bg-white text-gray-700 hover:bg-gray-100 active:bg-gray-200'
                 }`}
               >
                 <svg className="w-4 h-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -505,27 +620,27 @@ export default function GraveLocatorPage() {
               </button>
               <button
                 onClick={() => setNavigationMode('driving-car')}
-                className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                className={`flex-1 px-2 sm:px-3 py-2.5 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors touch-manipulation ${
                   navigationMode === 'driving-car'
                     ? 'bg-blue-600 text-white'
-                    : 'bg-white text-gray-700 hover:bg-gray-100'
+                    : 'bg-white text-gray-700 hover:bg-gray-100 active:bg-gray-200'
                 }`}
               >
                 <svg className="w-4 h-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" />
                 </svg>
                 Driving
               </button>
               <button
                 onClick={() => setNavigationMode('cycling-regular')}
-                className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                className={`flex-1 px-2 sm:px-3 py-2.5 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors touch-manipulation ${
                   navigationMode === 'cycling-regular'
                     ? 'bg-blue-600 text-white'
-                    : 'bg-white text-gray-700 hover:bg-gray-100'
+                    : 'bg-white text-gray-700 hover:bg-gray-100 active:bg-gray-200'
                 }`}
               >
                 <svg className="w-4 h-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
                 </svg>
                 Cycling
               </button>
@@ -569,7 +684,7 @@ export default function GraveLocatorPage() {
                   }
                 }}
                 disabled={isLoadingRoute}
-                className="w-full bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-medium transition-colors disabled:bg-gray-400 flex items-center gap-2 justify-center"
+                className="w-full bg-green-600 hover:bg-green-700 active:bg-green-800 text-white px-4 py-3 rounded-lg font-medium transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center gap-2 justify-center touch-manipulation"
               >
                 {isLoadingRoute ? (
                   'Loading Route...'
@@ -588,9 +703,32 @@ export default function GraveLocatorPage() {
 
         {/* Route Information */}
         {routeInfo && showDirections && (
-          <div className="mb-4 bg-white border-2 border-gray-300 rounded-lg p-4">
-            <h3 className="font-bold text-gray-900 mb-2">Navigation Instructions</h3>
-            <div className="flex gap-4 mb-3 text-sm">
+          <div className="mb-3 sm:mb-4 bg-white border-2 border-gray-300 rounded-lg sm:rounded-xl p-3 sm:p-4">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="font-bold text-gray-900 text-sm sm:text-base">Navigation Instructions</h3>
+              {/* Voice Navigation Toggle */}
+              {'speechSynthesis' in window && (
+                <button
+                  onClick={toggleVoiceNavigation}
+                  className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-colors flex items-center gap-1.5 touch-manipulation ${
+                    voiceNavigationEnabled
+                      ? 'bg-green-600 text-white hover:bg-green-700'
+                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  }`}
+                  title={voiceNavigationEnabled ? "Stop voice navigation" : "Start voice navigation"}
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    {voiceNavigationEnabled ? (
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                    ) : (
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                    )}
+                  </svg>
+                  <span className="hidden sm:inline">{voiceNavigationEnabled ? 'Voice On' : 'Voice Off'}</span>
+                </button>
+              )}
+            </div>
+            <div className="flex gap-3 sm:gap-4 mb-3 text-xs sm:text-sm flex-wrap">
               <span className="text-gray-700">
                 <strong>Distance:</strong> {formatDistance(routeInfo.distance)}
               </span>
@@ -598,14 +736,25 @@ export default function GraveLocatorPage() {
                 <strong>Duration:</strong> {formatDuration(routeInfo.duration)}
               </span>
             </div>
-            <div className="space-y-2 max-h-64 overflow-y-auto">
+            <div className="space-y-2 max-h-48 sm:max-h-64 overflow-y-auto">
               {routeInfo.instructions.map((instruction, index) => (
-                <div key={index} className="flex items-start gap-2 text-sm">
-                  <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded font-medium min-w-[30px] text-center">
+                <div 
+                  key={index} 
+                  className={`flex items-start gap-2 text-xs sm:text-sm p-2 rounded transition-colors ${
+                    voiceNavigationEnabled && index === currentInstructionIndex 
+                      ? 'bg-green-50 border-l-4 border-green-500' 
+                      : ''
+                  }`}
+                >
+                  <span className={`px-2 py-1 rounded font-medium min-w-[28px] sm:min-w-[30px] text-center flex-shrink-0 ${
+                    voiceNavigationEnabled && index === currentInstructionIndex
+                      ? 'bg-green-500 text-white'
+                      : 'bg-blue-100 text-blue-800'
+                  }`}>
                     {index + 1}
                   </span>
                   <span className="text-gray-700 flex-1">{instruction.instruction}</span>
-                  <span className="text-gray-500 text-xs whitespace-nowrap">
+                  <span className="text-gray-500 text-xs whitespace-nowrap flex-shrink-0">
                     {formatDistance(instruction.distance)}
                   </span>
                 </div>
@@ -615,7 +764,7 @@ export default function GraveLocatorPage() {
         )}
 
         {/* Map */}
-        <div className="bg-white border-2 border-gray-300 rounded-lg overflow-hidden relative z-10" style={{ height: '600px' }}>
+        <div className="bg-white border-2 border-gray-300 rounded-lg sm:rounded-xl overflow-hidden relative z-10" style={{ height: 'calc(100vh - 420px)', minHeight: '400px', maxHeight: '600px' }}>
           <GraveLocatorMap
             cemetery={cemetery}
             plots={plots}
