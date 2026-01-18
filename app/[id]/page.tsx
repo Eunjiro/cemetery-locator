@@ -498,14 +498,14 @@ export default function GraveLocatorPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100">
       <Navbar />
       
-      <div className="w-full px-3 sm:px-4 py-3 sm:py-4">
-        {/* Header */}
-        <div className="mb-3 sm:mb-4">
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">{cemetery.name} - Grave Locator</h1>
-          <p className="text-xs sm:text-sm text-gray-600 mt-1">Search for deceased persons and navigate to their graves</p>
+      <div className="w-full px-4 sm:px-4 py-3 sm:py-4">
+        {/* Compact Mobile Header */}
+        <div className="mb-4 sm:mb-4">
+          <h1 className="text-lg sm:text-2xl font-bold text-gray-900">{cemetery.name}</h1>
+          <p className="text-xs sm:text-sm text-gray-500 mt-0.5">Find and navigate to graves</p>
         </div>
 
         {/* Enable Location Button - Show if no location */}

@@ -34,16 +34,16 @@ export default function HomePage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100">
       <PublicNavbar />
       
-      <div className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-8 py-4 sm:py-6 lg:py-8">
-        <div className="text-center mb-6 sm:mb-8 lg:mb-12">
-          <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-gray-900 mb-3 sm:mb-4 px-2">
+      <div className="max-w-7xl mx-auto px-4 sm:px-4 lg:px-8 py-4 sm:py-6 lg:py-8 pb-20 sm:pb-6">
+        <div className="text-center mb-6 sm:mb-8">
+          <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-gray-900 mb-3">
             Find Your Loved Ones
           </h1>
-          <p className="text-base sm:text-lg text-gray-700 px-4 font-medium">
-            Search and locate graves across our cemeteries with interactive maps and GPS navigation
+          <p className="text-sm sm:text-base text-gray-600 px-4">
+            Search and locate graves with interactive maps
           </p>
         </div>
 
@@ -80,8 +80,8 @@ export default function HomePage() {
                       {cemetery.description}
                     </p>
                   )}
-                  <button className="mt-4 w-full bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white px-4 py-3 rounded-lg font-bold text-base transition-colors touch-manipulation shadow-sm">
-                    Open Locator
+                  <button className="mt-4 w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 active:scale-[0.98] text-white px-4 py-3.5 rounded-xl font-bold text-base transition-all touch-manipulation shadow-lg">
+                    Open Locator →
                   </button>
                 </div>
               </div>
@@ -90,50 +90,59 @@ export default function HomePage() {
           </div>
         )}
 
-        <div className="mt-8 sm:mt-12 rounded-xl p-4 sm:p-6 shadow-lg" style={{ background: 'linear-gradient(to bottom right, rgb(22, 163, 74), rgb(21, 128, 61))' }}>
-          <h2 className="text-xl sm:text-2xl font-bold text-white mb-4 sm:mb-6">How to Use</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6">
-            <div className="bg-white p-4 sm:p-5 rounded-lg shadow-md hover:shadow-lg transition-shadow">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 sm:w-12 sm:h-12 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
-                  <svg className="w-5 h-5 sm:w-6 sm:h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                  </svg>
+        <div className="mt-8 sm:mt-12 rounded-2xl p-5 sm:p-6 shadow-xl" style={{ background: 'linear-gradient(135deg, rgb(22, 163, 74), rgb(21, 128, 61))' }}>
+          <h2 className="text-xl sm:text-2xl font-bold text-white mb-5">How to Use</h2>
+          <div className="grid grid-cols-1 gap-4">
+            <div className="bg-white/95 backdrop-blur p-4 rounded-xl shadow-md active:scale-[0.98] transition-transform touch-manipulation">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center flex-shrink-0 shadow-lg">
+                  <span className="text-white font-bold text-lg">1</span>
                 </div>
-                <div>
-                  <h3 className="font-bold mb-1 text-base sm:text-lg text-gray-900">Search</h3>
-                  <p className="text-sm text-gray-700 leading-relaxed">
+                <div className="flex-1">
+                  <h3 className="font-bold mb-1 text-base text-gray-900 flex items-center gap-2">
+                    <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                    Search
+                  </h3>
+                  <p className="text-sm text-gray-600">
                     Enter the name of your loved one to find their grave location
                   </p>
                 </div>
               </div>
             </div>
-            <div className="bg-white p-4 sm:p-5 rounded-lg shadow-md hover:shadow-lg transition-shadow">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 sm:w-12 sm:h-12 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
-                  <svg className="w-5 h-5 sm:w-6 sm:h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                  </svg>
+            <div className="bg-white/95 backdrop-blur p-4 rounded-xl shadow-md active:scale-[0.98] transition-transform touch-manipulation">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 bg-green-600 rounded-full flex items-center justify-center flex-shrink-0 shadow-lg">
+                  <span className="text-white font-bold text-lg">2</span>
                 </div>
-                <div>
-                  <h3 className="font-bold mb-1 text-base sm:text-lg text-gray-900">Locate</h3>
-                  <p className="text-sm text-gray-700 leading-relaxed">
+                <div className="flex-1">
+                  <h3 className="font-bold mb-1 text-base text-gray-900 flex items-center gap-2">
+                    <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                    Locate
+                  </h3>
+                  <p className="text-sm text-gray-600">
                     View the exact plot location on an interactive cemetery map
                   </p>
                 </div>
               </div>
             </div>
-            <div className="bg-white p-4 sm:p-5 rounded-lg shadow-md hover:shadow-lg transition-shadow">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 sm:w-12 sm:h-12 bg-purple-100 rounded-full flex items-center justify-center flex-shrink-0">
-                  <svg className="w-5 h-5 sm:w-6 sm:h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
-                  </svg>
+            <div className="bg-white/95 backdrop-blur p-4 rounded-xl shadow-md active:scale-[0.98] transition-transform touch-manipulation">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 bg-purple-600 rounded-full flex items-center justify-center flex-shrink-0 shadow-lg">
+                  <span className="text-white font-bold text-lg">3</span>
                 </div>
-                <div>
-                  <h3 className="font-bold mb-1 text-base sm:text-lg text-gray-900">Navigate</h3>
-                  <p className="text-sm text-gray-700 leading-relaxed">
+                <div className="flex-1">
+                  <h3 className="font-bold mb-1 text-base text-gray-900 flex items-center gap-2">
+                    <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+                    </svg>
+                    Navigate
+                  </h3>
+                  <p className="text-sm text-gray-600">
                     Get turn-by-turn GPS directions from your current location
                   </p>
                 </div>

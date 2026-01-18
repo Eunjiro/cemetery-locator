@@ -102,6 +102,39 @@ button, a {
     padding-left: max(0px, env(safe-area-inset-left));
     padding-right: max(0px, env(safe-area-inset-right));
   }
+  
+  .safe-area-bottom {
+    padding-bottom: max(0px, env(safe-area-inset-bottom));
+  }
+}
+
+/* Mobile app-style animations */
+@keyframes slideUp {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-up {
+  animation: slideUp 0.3s ease-out;
+}
+
+/* Remove default mobile browser chrome */
+@media (display-mode: standalone) {
+  body {
+    background: linear-gradient(to bottom, #f9fafb, #f3f4f6);
+  }
+}
+
+/* Better touch targets for mobile */
+button, a, [role="button"] {
+  min-height: 44px;
+  min-width: 44px;
 }
 
 /* Prevent zoom on input focus (iOS) */
