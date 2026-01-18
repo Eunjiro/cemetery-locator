@@ -50,9 +50,10 @@ export default function GraveLocatorPage() {
   const [locationError, setLocationError] = useState<string | null>(null);
   const [searchTimeout, setSearchTimeout] = useState<NodeJS.Timeout | null>(null);
   const [centerCoordinates, setCenterCoordinates] = useState<[number, number] | null>(null);
-  const [voiceNavigationEnabled, setVoiceNavigationEnabled] = useState(false);
+  const [voiceNavigationEnabled, setVoiceNavigationEnabled] = useState(true);
   const [currentInstructionIndex, setCurrentInstructionIndex] = useState(0);
   const [lastSpokenIndex, setLastSpokenIndex] = useState(-1);
+  const instructionRefs = useRef<(HTMLDivElement | null)[]>([]);
 
   useEffect(() => {
     fetchCemeteryData();
@@ -736,29 +737,57 @@ export default function GraveLocatorPage() {
                 <strong>Duration:</strong> {formatDuration(routeInfo.duration)}
               </span>
             </div>
-            <div className="space-y-2 max-h-48 sm:max-h-64 overflow-y-auto">
-              {routeInfo.instructions.map((instruction, index) => (
-                <div 
-                  key={index} 
-                  className={`flex items-start gap-2 text-xs sm:text-sm p-2 rounded transition-colors ${
-                    voiceNavigationEnabled && index === currentInstructionIndex 
-                      ? 'bg-green-50 border-l-4 border-green-500' 
-                      : ''
-                  }`}
-                >
-                  <span className={`px-2 py-1 rounded font-medium min-w-[28px] sm:min-w-[30px] text-center flex-shrink-0 ${
-                    voiceNavigationEnabled && index === currentInstructionIndex
-                      ? 'bg-green-500 text-white'
-                      : 'bg-blue-100 text-blue-800'
-                  }`}>
-                    {index + 1}
-                  </span>
-                  <span className="text-gray-700 flex-1">{instruction.instruction}</span>
-                  <span className="text-gray-500 text-xs whitespace-nowrap flex-shrink-0">
-                    {formatDistance(instruction.distance)}
-                  </span>
+            <div className="space-y-2 overflow-hidden">
+              {routeInfo.instructions
+                .filter((_, index) => {
+                  // Show current step and next step only
+                  return index === currentInstructionIndex || index === currentInstructionIndex + 1;
+                })
+                .map((instruction, idx) => {
+                  const actualIndex = currentInstructionIndex + idx;
+                  const isActive = actualIndex === currentInstructionIndex;
+                  
+                  return (
+                    <div 
+                      key={actualIndex}
+                      ref={(el) => {
+                        instructionRefs.current[actualIndex] = el;
+                        // Auto-scroll to active instruction
+                        if (isActive && el) {
+                          el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                        }
+                      }}
+                      className={`flex items-start gap-2 text-xs sm:text-sm p-3 rounded-lg transition-all duration-300 ${
+                        isActive
+                          ? 'bg-green-50 border-l-4 border-green-500 shadow-md' 
+                          : 'bg-gray-50 border-l-4 border-gray-300 opacity-70'
+                      }`}
+                    >
+                      <span className={`px-2 py-1 rounded font-medium min-w-[28px] sm:min-w-[30px] text-center flex-shrink-0 transition-colors ${
+                        isActive
+                          ? 'bg-green-500 text-white'
+                          : 'bg-gray-300 text-gray-600'
+                      }`}>
+                        {actualIndex + 1}
+                      </span>
+                      <span className={`flex-1 ${
+                        isActive ? 'text-gray-900 font-medium' : 'text-gray-600'
+                      }`}>
+                        {instruction.instruction}
+                      </span>
+                      <span className={`text-xs whitespace-nowrap flex-shrink-0 ${
+                        isActive ? 'text-gray-700 font-semibold' : 'text-gray-500'
+                      }`}>
+                        {formatDistance(instruction.distance)}
+                      </span>
+                    </div>
+                  );
+                })}
+              {currentInstructionIndex < routeInfo.instructions.length - 1 && (
+                <div className="text-center text-xs text-gray-500 py-2">
+                  {routeInfo.instructions.length - currentInstructionIndex - 1} more step{routeInfo.instructions.length - currentInstructionIndex - 1 !== 1 ? 's' : ''} remaining
                 </div>
-              ))}
+              )}
             </div>
           </div>
         )}
