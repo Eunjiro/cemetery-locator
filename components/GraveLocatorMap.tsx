@@ -13,6 +13,40 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
 });
 
+// Create custom directional marker icon
+const createDirectionalIcon = (heading: number | null) => {
+  const svg = `
+    <svg width="40" height="40" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <filter id="shadow" x="-50%" y="-50%" width="200%" height="200%">
+          <feGaussianBlur in="SourceAlpha" stdDeviation="2"/>
+          <feOffset dx="0" dy="2" result="offsetblur"/>
+          <feComponentTransfer>
+            <feFuncA type="linear" slope="0.3"/>
+          </feComponentTransfer>
+          <feMerge>
+            <feMergeNode/>
+            <feMergeNode in="SourceGraphic"/>
+          </feMerge>
+        </filter>
+      </defs>
+      <g transform="translate(20, 20) rotate(${heading || 0})">
+        <!-- Outer circle with border -->
+        <circle cx="0" cy="0" r="14" fill="#3b82f6" stroke="white" stroke-width="3" filter="url(#shadow)"/>
+        <!-- Direction arrow -->
+        <path d="M 0,-10 L -5,5 L 0,2 L 5,5 Z" fill="white"/>
+      </g>
+    </svg>
+  `;
+  
+  return L.divIcon({
+    html: svg,
+    className: 'custom-location-marker',
+    iconSize: [40, 40],
+    iconAnchor: [20, 20],
+  });
+};
+
 // Component to handle map instance and effects
 function MapController({ 
   highlightedPlotId, 
@@ -123,6 +157,9 @@ interface GraveLocatorMapProps {
   route?: [number, number][] | null;
   centerCoordinates?: [number, number] | null;
   userHeading?: number | null;
+  currentInstruction?: { instruction: string; distance: number } | null;
+  voiceNavigationEnabled?: boolean;
+  onToggleVoice?: () => void;
 }
 
 export default function GraveLocatorMap({ 
@@ -133,12 +170,16 @@ export default function GraveLocatorMap({
   route = null,
   centerCoordinates = null,
   userHeading = null,
+  currentInstruction = null,
+  voiceNavigationEnabled = false,
+  onToggleVoice,
 }: GraveLocatorMapProps) {
   const [isMounted, setIsMounted] = useState(false);
   const [map, setMap] = useState<L.Map | null>(null);
   const highlightMarkerRef = useRef<L.Marker | null>(null);
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isLocationLocked, setIsLocationLocked] = useState(false);
   const center: [number, number] = centerCoordinates || [cemetery.latitude, cemetery.longitude];
 
   useEffect(() => {
@@ -165,6 +206,16 @@ export default function GraveLocatorMap({
       document.removeEventListener('fullscreenchange', handleFullscreenChange);
     };
   }, [map]);
+
+  // Auto-center map on user location when locked
+  useEffect(() => {
+    if (isLocationLocked && userLocation && map) {
+      map.setView(userLocation, map.getZoom(), {
+        animate: true,
+        duration: 0.5,
+      });
+    }
+  }, [userLocation, isLocationLocked, map]);
 
   // Handle highlighting marker
   useEffect(() => {
@@ -327,9 +378,13 @@ export default function GraveLocatorMap({
           maxNativeZoom={19}
         />
 
-        {/* User Location Marker */}
+        {/* User Location Marker with Direction */}
         {userLocation && (
-          <Marker position={userLocation} />
+          <Marker 
+            position={userLocation}
+            icon={createDirectionalIcon(userHeading)}
+            zIndexOffset={1000}
+          />
         )}
 
         {/* Navigation Route with Directional Styling */}
@@ -486,6 +541,35 @@ export default function GraveLocatorMap({
           </button>
         )}
 
+        {/* Lock to Location Button */}
+        {userLocation && (
+          <button
+            onClick={() => {
+              setIsLocationLocked(!isLocationLocked);
+              if (!isLocationLocked && map && userLocation) {
+                map.flyTo(userLocation, 19, { duration: 1 });
+              }
+            }}
+            className={`p-2.5 sm:p-2 rounded-lg sm:rounded-xl shadow-lg transition-all touch-manipulation ${
+              isLocationLocked 
+                ? 'bg-blue-600 text-white hover:bg-blue-700 active:bg-blue-800' 
+                : 'bg-white text-gray-700 hover:bg-gray-100 active:bg-gray-200'
+            }`}
+            title={isLocationLocked ? "Location locked - tap to unlock" : "Lock to my location"}
+          >
+            {isLocationLocked ? (
+              <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+              </svg>
+            ) : (
+              <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+            )}
+          </button>
+        )}
+
         {/* Center to Selected Plot Button */}
         {highlightedPlotId && (
           <button
@@ -509,12 +593,57 @@ export default function GraveLocatorMap({
         )}
       </div>
 
-      {/* Legend - Only show when a plot is highlighted */}
-      {highlightedPlotId && (
+      {/* Legend - Only show when a plot is highlighted and not in fullscreen */}
+      {highlightedPlotId && !isFullscreen && (
         <div className="absolute bottom-2 right-2 sm:bottom-4 sm:right-4 bg-white rounded-lg sm:rounded-xl shadow-lg p-2 sm:p-3 z-[1000]">
           <div className="flex items-center gap-2">
             <div className="w-3 h-3 rounded-full bg-red-500 animate-pulse flex-shrink-0"></div>
             <span className="text-xs sm:text-sm font-semibold text-gray-900 whitespace-nowrap">Located Grave</span>
+          </div>
+        </div>
+      )}
+
+      {/* Floating Navigation Instruction in Fullscreen Mode */}
+      {isFullscreen && currentInstruction && (
+        <div className="absolute bottom-4 left-4 right-4 z-[1000] animate-slide-up">
+          <div className="bg-white/95 backdrop-blur-lg rounded-2xl shadow-2xl p-4 border-2 border-green-500">
+            <div className="flex items-start gap-3">
+              <div className="flex-1">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="bg-green-500 text-white px-3 py-1 rounded-full text-sm font-bold">
+                    Next
+                  </span>
+                  {onToggleVoice && (
+                    <button
+                      onClick={onToggleVoice}
+                      className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors flex items-center gap-1.5 touch-manipulation ${
+                        voiceNavigationEnabled
+                          ? 'bg-green-600 text-white'
+                          : 'bg-gray-200 text-gray-700'
+                      }`}
+                      title={voiceNavigationEnabled ? "Voice On" : "Voice Off"}
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        {voiceNavigationEnabled ? (
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                        ) : (
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                        )}
+                      </svg>
+                      {voiceNavigationEnabled ? 'ON' : 'OFF'}
+                    </button>
+                  )}
+                </div>
+                <p className="text-gray-900 font-medium text-base leading-relaxed">
+                  {currentInstruction.instruction}
+                </p>
+                <p className="text-gray-600 text-sm mt-2 font-semibold">
+                  {currentInstruction.distance > 1000 
+                    ? `${(currentInstruction.distance / 1000).toFixed(1)} km` 
+                    : `${Math.round(currentInstruction.distance)} m`}
+                </p>
+              </div>
+            </div>
           </div>
         </div>
       )}

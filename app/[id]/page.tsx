@@ -575,7 +575,7 @@ export default function GraveLocatorPage() {
         )}
 
         {/* Search Bar */}
-        <div className="mb-3 sm:mb-4 relative z-50">
+        <div className="mb-3 sm:mb-4 relative z-40">
           <form onSubmit={handleSearch} className="relative">
             <div className="relative">
               <input
@@ -588,7 +588,7 @@ export default function GraveLocatorPage() {
                   }
                 }}
                 placeholder="Search by name (e.g., John Doe)"
-                className="w-full px-4 py-3 sm:py-3.5 pr-12 border-2 border-gray-300 rounded-lg sm:rounded-xl focus:outline-none focus:border-blue-500 text-sm sm:text-base text-gray-900 placeholder:text-gray-500 bg-white z-50 touch-manipulation"
+                className="w-full px-4 py-3 sm:py-3.5 pr-12 border-2 border-gray-300 rounded-lg sm:rounded-xl focus:outline-none focus:border-blue-500 text-sm sm:text-base text-gray-900 placeholder:text-gray-500 bg-white touch-manipulation"
                 autoComplete="off"
               />
               {isSearching && (
@@ -889,6 +889,9 @@ export default function GraveLocatorPage() {
             route={route}
             centerCoordinates={centerCoordinates}
             userHeading={userHeading}
+            currentInstruction={routeInfo && routeInfo.instructions[currentInstructionIndex] ? routeInfo.instructions[currentInstructionIndex] : null}
+            voiceNavigationEnabled={voiceNavigationEnabled}
+            onToggleVoice={toggleVoiceNavigation}
           />
         </div>
       </div>
