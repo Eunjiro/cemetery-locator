@@ -122,6 +122,7 @@ interface GraveLocatorMapProps {
   userLocation?: [number, number] | null;
   route?: [number, number][] | null;
   centerCoordinates?: [number, number] | null;
+  userHeading?: number | null;
 }
 
 export default function GraveLocatorMap({ 
@@ -131,6 +132,7 @@ export default function GraveLocatorMap({
   userLocation = null,
   route = null,
   centerCoordinates = null,
+  userHeading = null,
 }: GraveLocatorMapProps) {
   const [isMounted, setIsMounted] = useState(false);
   const [map, setMap] = useState<L.Map | null>(null);
@@ -330,15 +332,117 @@ export default function GraveLocatorMap({
           <Marker position={userLocation} />
         )}
 
-        {/* Navigation Route */}
-        {route && route.length > 0 && (
+        {/* Navigation Route with Directional Styling */}
+        {route && route.length > 0 && userLocation && (
+          <>
+            {(() => {
+              // Find the closest point on route to user location
+              let closestIndex = 0;
+              let minDistance = Infinity;
+              
+              route.forEach((point, index) => {
+                const distance = Math.sqrt(
+                  Math.pow(point[0] - userLocation[0], 2) + 
+                  Math.pow(point[1] - userLocation[1], 2)
+                );
+                if (distance < minDistance) {
+                  minDistance = distance;
+                  closestIndex = index;
+                }
+              });
+
+              // If we have heading info, determine which direction is "ahead"
+              if (userHeading !== null && route.length > closestIndex + 1) {
+                const nextPoint = route[closestIndex + 1];
+                // Calculate bearing to next point
+                const dLon = (nextPoint[1] - userLocation[1]) * Math.PI / 180;
+                const lat1 = userLocation[0] * Math.PI / 180;
+                const lat2 = nextPoint[0] * Math.PI / 180;
+                const y = Math.sin(dLon) * Math.cos(lat2);
+                const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
+                const bearing = (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+                
+                // Check if user is facing toward or away from the route direction
+                let diff = bearing - userHeading;
+                if (diff > 180) diff -= 360;
+                if (diff < -180) diff += 360;
+                
+                // If user is facing backwards (more than 90 degrees off), flip the direction
+                if (Math.abs(diff) > 90) {
+                  // User is facing backward, so what's ahead in route is actually behind them
+                  const behind = route.slice(closestIndex);
+                  const ahead = route.slice(0, closestIndex + 1);
+                  return (
+                    <>
+                      {/* Thin line for path behind user (visually ahead in wrong direction) */}
+                      {ahead.length > 1 && (
+                        <Polyline
+                          positions={ahead}
+                          pathOptions={{
+                            color: '#94a3b8',
+                            weight: 3,
+                            opacity: 0.5,
+                          }}
+                        />
+                      )}
+                      {/* Thick line for path ahead (user needs to turn around) */}
+                      {behind.length > 1 && (
+                        <Polyline
+                          positions={behind}
+                          pathOptions={{
+                            color: '#3b82f6',
+                            weight: 8,
+                            opacity: 0.9,
+                          }}
+                        />
+                      )}
+                    </>
+                  );
+                }
+              }
+
+              // Normal case: ahead is forward on route, behind is backward on route
+              const behind = route.slice(0, closestIndex + 1);
+              const ahead = route.slice(closestIndex);
+              
+              return (
+                <>
+                  {/* Thin line for path already traveled (behind) */}
+                  {behind.length > 1 && (
+                    <Polyline
+                      positions={behind}
+                      pathOptions={{
+                        color: '#94a3b8',
+                        weight: 3,
+                        opacity: 0.5,
+                      }}
+                    />
+                  )}
+                  {/* Thick line for path ahead */}
+                  {ahead.length > 1 && (
+                    <Polyline
+                      positions={ahead}
+                      pathOptions={{
+                        color: '#3b82f6',
+                        weight: 8,
+                        opacity: 0.9,
+                      }}
+                    />
+                  )}
+                </>
+              );
+            })()}
+          </>
+        )}
+        
+        {/* Fallback route rendering if no user location */}
+        {route && route.length > 0 && !userLocation && (
           <Polyline
             positions={route}
             pathOptions={{
               color: '#3b82f6',
-              weight: 4,
+              weight: 6,
               opacity: 0.8,
-              dashArray: '10, 5',
             }}
           />
         )}
