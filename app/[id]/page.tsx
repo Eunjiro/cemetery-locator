@@ -54,6 +54,8 @@ export default function GraveLocatorPage() {
   const [currentInstructionIndex, setCurrentInstructionIndex] = useState(0);
   const [lastSpokenIndex, setLastSpokenIndex] = useState(-1);
   const instructionRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const [userHeading, setUserHeading] = useState<number | null>(null);
+  const [targetBearing, setTargetBearing] = useState<number | null>(null);
 
   useEffect(() => {
     fetchCemeteryData();
@@ -64,7 +66,38 @@ export default function GraveLocatorPage() {
       requestLocation();
     }, 100);
     
-    return () => clearTimeout(timer);
+    // Set up device orientation for compass
+    const handleOrientation = (event: DeviceOrientationEvent) => {
+      // Type assertion for iOS-specific property
+      const iosEvent = event as DeviceOrientationEvent & { webkitCompassHeading?: number };
+      
+      if (iosEvent.webkitCompassHeading !== undefined) {
+        // iOS
+        setUserHeading(iosEvent.webkitCompassHeading);
+      } else if (event.alpha !== null) {
+        // Android - alpha is 0-360 degrees
+        const heading = 360 - event.alpha;
+        setUserHeading(heading);
+      }
+    };
+
+    // Request permission for iOS 13+
+    if (typeof DeviceOrientationEvent !== 'undefined' && typeof (DeviceOrientationEvent as any).requestPermission === 'function') {
+      (DeviceOrientationEvent as any).requestPermission()
+        .then((response: string) => {
+          if (response === 'granted') {
+            window.addEventListener('deviceorientation', handleOrientation, true);
+          }
+        })
+        .catch(console.error);
+    } else if (window.DeviceOrientationEvent) {
+      window.addEventListener('deviceorientation', handleOrientation, true);
+    }
+    
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('deviceorientation', handleOrientation, true);
+    };
   }, [cemeteryId]);
 
   // Watch for navigation mode changes and recalculate route if one exists
@@ -138,6 +171,11 @@ export default function GraveLocatorPage() {
       (position) => {
         setUserLocation([position.coords.latitude, position.coords.longitude]);
         setLocationError(null);
+        
+        // Get heading if available (mainly on mobile devices)
+        if (position.coords.heading !== null && position.coords.heading !== undefined) {
+          setUserHeading(position.coords.heading);
+        }
       },
       (error) => {
         
@@ -286,10 +324,59 @@ export default function GraveLocatorPage() {
     setVoiceNavigationEnabled(false);
     setCurrentInstructionIndex(0);
     setLastSpokenIndex(-1);
+    setTargetBearing(null);
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
     }
   };
+
+  // Calculate bearing between two points
+  const calculateBearing = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const lat1Rad = lat1 * Math.PI / 180;
+    const lat2Rad = lat2 * Math.PI / 180;
+    
+    const y = Math.sin(dLon) * Math.cos(lat2Rad);
+    const x = Math.cos(lat1Rad) * Math.sin(lat2Rad) - Math.sin(lat1Rad) * Math.cos(lat2Rad) * Math.cos(dLon);
+    const bearing = Math.atan2(y, x) * 180 / Math.PI;
+    
+    return (bearing + 360) % 360; // Normalize to 0-360
+  };
+
+  // Get cardinal direction from degrees
+  const getCardinalDirection = (degrees: number): string => {
+    const directions = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+    const index = Math.round(((degrees % 360) / 45)) % 8;
+    return directions[index];
+  };
+
+  // Get turn direction (left, right, straight)
+  const getTurnDirection = (currentHeading: number, targetBearing: number): string => {
+    let diff = targetBearing - currentHeading;
+    if (diff > 180) diff -= 360;
+    if (diff < -180) diff += 360;
+    
+    if (Math.abs(diff) < 20) return 'straight';
+    if (diff > 0) return 'right';
+    return 'left';
+  };
+
+  // Update target bearing when route changes
+  useEffect(() => {
+    if (userLocation && route && route.length > 1) {
+      // Calculate bearing to next point in route
+      const nextPoint = route[Math.min(currentInstructionIndex + 1, route.length - 1)];
+      const bearing = calculateBearing(
+        userLocation[0],
+        userLocation[1],
+        nextPoint[0],
+        nextPoint[1]
+      );
+      setTargetBearing(bearing);
+    } else {
+      setTargetBearing(null);
+    }
+  }, [userLocation, route, currentInstructionIndex]);
 
   const speakInstruction = (text: string) => {
     if ('speechSynthesis' in window && voiceNavigationEnabled) {
@@ -699,6 +786,92 @@ export default function GraveLocatorPage() {
                 )}
               </button>
             )}
+          </div>
+        )}
+
+        {/* Compass and Direction Indicator */}
+        {showDirections && userLocation && (
+          <div className="mb-3 sm:mb-4 bg-gradient-to-br from-blue-50 to-indigo-50 border-2 border-blue-200 rounded-lg sm:rounded-xl p-3 sm:p-4">
+            <div className="flex items-center justify-between gap-4">
+              {/* Compass */}
+              <div className="flex flex-col items-center">
+                <div className="text-xs text-gray-600 mb-2 font-medium">Your Direction</div>
+                <div className="relative w-20 h-20 sm:w-24 sm:h-24">
+                  {/* Compass Circle */}
+                  <div className="absolute inset-0 rounded-full bg-white border-4 border-blue-500 shadow-lg">
+                    {/* Cardinal directions */}
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <div className="relative w-full h-full">
+                        <div className="absolute top-1 left-1/2 -translate-x-1/2 text-xs font-bold text-red-600">N</div>
+                        <div className="absolute bottom-1 left-1/2 -translate-x-1/2 text-xs font-bold text-gray-500">S</div>
+                        <div className="absolute right-1 top-1/2 -translate-y-1/2 text-xs font-bold text-gray-500">E</div>
+                        <div className="absolute left-1 top-1/2 -translate-y-1/2 text-xs font-bold text-gray-500">W</div>
+                      </div>
+                    </div>
+                    {/* Compass Needle - points to user's heading */}
+                    <div 
+                      className="absolute inset-0 flex items-center justify-center transition-transform duration-500"
+                      style={{ transform: `rotate(${userHeading || 0}deg)` }}
+                    >
+                      <div className="relative w-1 h-16 sm:h-20">
+                        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-b-8 border-l-transparent border-r-transparent border-b-red-600"></div>
+                        <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-8 border-l-transparent border-r-transparent border-t-gray-400"></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-2 text-sm font-bold text-gray-900">
+                  {userHeading !== null ? `${Math.round(userHeading)}° ${getCardinalDirection(userHeading)}` : 'Calibrating...'}
+                </div>
+              </div>
+
+              {/* Direction Indicator */}
+              {targetBearing !== null && userHeading !== null && (
+                <div className="flex-1 flex flex-col items-center justify-center">
+                  <div className="text-xs text-gray-600 mb-2 font-medium">Turn Direction</div>
+                  <div className="relative">
+                    {/* Turn Arrow */}
+                    {(() => {
+                      const turnDir = getTurnDirection(userHeading, targetBearing);
+                      let diff = targetBearing - userHeading;
+                      if (diff > 180) diff -= 360;
+                      if (diff < -180) diff += 360;
+                      
+                      return (
+                        <div className="flex flex-col items-center">
+                          <svg className="w-16 h-16 sm:w-20 sm:h-20" viewBox="0 0 100 100">
+                            {turnDir === 'straight' ? (
+                              <g>
+                                <path d="M50 20 L50 80 M35 35 L50 20 L65 35" stroke="#10b981" strokeWidth="6" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+                              </g>
+                            ) : turnDir === 'left' ? (
+                              <g>
+                                <path d="M70 50 Q50 50 35 35 M35 50 L35 35 L50 35" stroke="#f59e0b" strokeWidth="6" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+                              </g>
+                            ) : (
+                              <g>
+                                <path d="M30 50 Q50 50 65 35 M65 50 L65 35 L50 35" stroke="#f59e0b" strokeWidth="6" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+                              </g>
+                            )}
+                          </svg>
+                          <div className={`text-lg font-bold mt-1 ${
+                            turnDir === 'straight' ? 'text-green-600' : 'text-amber-600'
+                          }`}>
+                            {turnDir === 'straight' ? 'Straight' : turnDir === 'left' ? 'Turn Left' : 'Turn Right'}
+                          </div>
+                          <div className="text-xs text-gray-600 mt-1">
+                            Target: {Math.round(targetBearing)}° {getCardinalDirection(targetBearing)}
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            ({Math.abs(Math.round(diff))}° {diff > 0 ? 'right' : 'left'})
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
