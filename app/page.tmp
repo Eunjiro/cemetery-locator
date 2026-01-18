@@ -69,7 +69,7 @@ export default function HomePage() {
                   </h3>
                   {cemetery.address && (
                     <p className="text-sm text-gray-600 mb-1">
-                      {cemetery.address}
+                       {cemetery.address}
                       {cemetery.city && `, ${cemetery.city}`}
                     </p>
                   )}
@@ -91,21 +91,21 @@ export default function HomePage() {
           <h2 className="text-2xl font-bold text-gray-900 mb-4">How to Use</h2>
           <div className="grid md:grid-cols-3 gap-6">
             <div>
-              <div className="text-3xl mb-2">Search</div>
+              <div className="text-3xl mb-2"></div>
               <h3 className="font-semibold mb-2">Search</h3>
               <p className="text-sm text-gray-600">
                 Enter the name of your loved one to find their grave location
               </p>
             </div>
             <div>
-              <div className="text-3xl mb-2">Locate</div>
+              <div className="text-3xl mb-2">️</div>
               <h3 className="font-semibold mb-2">Locate</h3>
               <p className="text-sm text-gray-600">
                 View the exact plot location on an interactive cemetery map
               </p>
             </div>
             <div>
-              <div className="text-3xl mb-2">Navigate</div>
+              <div className="text-3xl mb-2"></div>
               <h3 className="font-semibold mb-2">Navigate</h3>
               <p className="text-sm text-gray-600">
                 Get turn-by-turn GPS directions from your current location
