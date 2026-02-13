@@ -57,7 +57,8 @@ export default function GraveLocatorPage() {
   const [locationError, setLocationError] = useState<string | null>(null);
   const [searchTimeout, setSearchTimeout] = useState<NodeJS.Timeout | null>(null);
   const [centerCoordinates, setCenterCoordinates] = useState<[number, number] | null>(null);
-  const [voiceNavigationEnabled, setVoiceNavigationEnabled] = useState(true);
+  const [voiceNavigationEnabled, setVoiceNavigationEnabled] = useState(false);
+  const [hasSpeechSynthesis, setHasSpeechSynthesis] = useState(false);
   const [currentInstructionIndex, setCurrentInstructionIndex] = useState(0);
   const [lastSpokenIndex, setLastSpokenIndex] = useState(-1);
   const instructionRefs = useRef<(HTMLDivElement | null)[]>([]);
@@ -87,6 +88,9 @@ export default function GraveLocatorPage() {
     // Check for voice recognition support
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     setVoiceSupported(!!SpeechRecognition);
+
+    // Check for speech synthesis support (hydration-safe)
+    setHasSpeechSynthesis('speechSynthesis' in window);
     
     // Automatically request location on page load for mobile experience
     // Use a small delay to ensure page is fully loaded
@@ -660,7 +664,7 @@ export default function GraveLocatorPage() {
     setCurrentInstructionIndex(0);
     setLastSpokenIndex(-1);
     setTargetBearing(null);
-    if ('speechSynthesis' in window) {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       window.speechSynthesis.cancel();
     }
   };
@@ -713,8 +717,8 @@ export default function GraveLocatorPage() {
     }
   }, [userLocation, route, currentInstructionIndex]);
 
-  const speakInstruction = (text: string) => {
-    if ('speechSynthesis' in window && voiceNavigationEnabled) {
+  const speakInstruction = (text: string, force: boolean = false) => {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window && (voiceNavigationEnabled || force)) {
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.rate = 0.9;
@@ -746,51 +750,54 @@ export default function GraveLocatorPage() {
     const instructions = routeInfo.instructions;
     if (currentInstructionIndex >= instructions.length) return;
 
-    // Get the next waypoint from the route
-    let waypointIndex = 0;
-    let distanceSum = 0;
-    
-    for (let i = 0; i < instructions.length && i < currentInstructionIndex; i++) {
-      distanceSum += instructions[i].distance;
-    }
+    const currentInstruction = instructions[currentInstructionIndex];
 
-    // Find approximate waypoint based on distance
-    let currentDistance = 0;
-    for (let i = 0; i < route.length - 1; i++) {
-      const segmentDistance = calculateDistance(
-        route[i][0], route[i][1],
-        route[i + 1][0], route[i + 1][1]
-      );
-      currentDistance += segmentDistance;
-      
-      if (currentDistance >= distanceSum) {
-        waypointIndex = i;
-        break;
+    // Use way_points from ORS API if available (exact coordinate indices)
+    let waypointCoord: [number, number];
+    if (currentInstruction.way_points && currentInstruction.way_points.length >= 2) {
+      // way_points[0] is the start index, way_points[1] is the end index in the route array
+      const wpIndex = Math.min(currentInstruction.way_points[0], route.length - 1);
+      waypointCoord = route[wpIndex];
+    } else {
+      // Fallback: accumulate distance to approximate waypoint
+      let distanceSum = 0;
+      for (let i = 0; i < currentInstructionIndex; i++) {
+        distanceSum += instructions[i].distance;
       }
+      let waypointIndex = 0;
+      let currentDistance = 0;
+      for (let i = 0; i < route.length - 1; i++) {
+        const segmentDistance = calculateDistance(
+          route[i][0], route[i][1],
+          route[i + 1][0], route[i + 1][1]
+        );
+        currentDistance += segmentDistance;
+        if (currentDistance >= distanceSum) {
+          waypointIndex = i;
+          break;
+        }
+      }
+      waypointCoord = route[Math.min(waypointIndex, route.length - 1)];
     }
 
-    const nextWaypoint = route[Math.min(waypointIndex + 5, route.length - 1)];
-    const distanceToNextPoint = calculateDistance(
+    const distanceToWaypoint = calculateDistance(
       userLocation[0], userLocation[1],
-      nextWaypoint[0], nextWaypoint[1]
+      waypointCoord[0], waypointCoord[1]
     );
 
-    // Speak instruction when within 30 meters and haven't spoken it yet
-    if (distanceToNextPoint < 30 && lastSpokenIndex !== currentInstructionIndex) {
-      const instruction = instructions[currentInstructionIndex];
-      const distanceText = instruction.distance > 100 
-        ? `in ${Math.round(instruction.distance)} meters`
+    // Speak instruction when within 50 meters and haven't spoken it yet
+    if (distanceToWaypoint < 50 && lastSpokenIndex !== currentInstructionIndex) {
+      const distanceText = currentInstruction.distance > 100
+        ? `in ${Math.round(currentInstruction.distance)} meters`
         : 'now';
-      
-      speakInstruction(`${instruction.instruction} ${distanceText}`);
+
+      speakInstruction(`${currentInstruction.instruction} ${distanceText}`);
       setLastSpokenIndex(currentInstructionIndex);
-      
-      // Move to next instruction
-      if (distanceToNextPoint < 10) {
-        setTimeout(() => {
-          setCurrentInstructionIndex(prev => prev + 1);
-        }, 2000);
-      }
+    }
+
+    // Advance to next instruction when very close to waypoint
+    if (distanceToWaypoint < 15 && lastSpokenIndex === currentInstructionIndex) {
+      setCurrentInstructionIndex(prev => Math.min(prev + 1, instructions.length - 1));
     }
   }, [userLocation, voiceNavigationEnabled, routeInfo, route, currentInstructionIndex, lastSpokenIndex]);
 
@@ -800,13 +807,22 @@ export default function GraveLocatorPage() {
       setVoiceNavigationEnabled(true);
       setCurrentInstructionIndex(0);
       setLastSpokenIndex(-1);
-      speakInstruction('Voice navigation started. Follow the instructions.');
+      // Use force=true because state hasn't updated yet
+      speakInstruction('Voice navigation started. Follow the instructions.', true);
+      // Speak the first instruction after a short delay
+      const firstInstruction = routeInfo.instructions[0];
+      if (firstInstruction) {
+        setTimeout(() => {
+          speakInstruction(`${firstInstruction.instruction}, ${Math.round(firstInstruction.distance)} meters`, true);
+        }, 2500);
+      }
     } else {
       // Stopping voice navigation
       setVoiceNavigationEnabled(false);
-      if ('speechSynthesis' in window) {
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
         window.speechSynthesis.cancel();
       }
+      speakInstruction('Voice navigation stopped.', true);
     }
   };
 
@@ -1584,7 +1600,7 @@ export default function GraveLocatorPage() {
             <div className="flex items-center justify-between mb-2">
               <h3 className="font-bold text-gray-900 text-sm sm:text-base">Navigation Instructions</h3>
               {/* Voice Navigation Toggle */}
-              {'speechSynthesis' in window && (
+              {hasSpeechSynthesis && (
                 <button
                   onClick={toggleVoiceNavigation}
                   className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-colors flex items-center gap-1.5 touch-manipulation ${

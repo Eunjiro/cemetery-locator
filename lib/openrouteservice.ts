@@ -15,6 +15,7 @@ export interface RouteInstruction {
   duration: number;
   instruction: string;
   type: number;
+  way_points?: [number, number]; // [startIndex, endIndex] into route coordinates array
 }
 
 /**
