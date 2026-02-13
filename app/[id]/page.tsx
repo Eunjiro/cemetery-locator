@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import Navbar from '@/components/PublicNavbar';
 import { getDirections, formatDistance, formatDuration, Route } from '@/lib/openrouteservice';
@@ -31,6 +31,7 @@ interface Plot {
 export default function GraveLocatorPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const cemeteryId = params.id as string;
   
   const [loading, setLoading] = useState(true);
@@ -65,10 +66,12 @@ export default function GraveLocatorPage() {
   const [aiEnabled, setAiEnabled] = useState<boolean>(false);
   const [showSearchTips, setShowSearchTips] = useState<boolean>(false);
   const [searchSuggestions, setSearchSuggestions] = useState<string[]>([]);
+  const [fromBookmark, setFromBookmark] = useState<boolean>(false);
 
   useEffect(() => {
     fetchCemeteryData();
     fetchPlots();
+    
     // Automatically request location on page load for mobile experience
     // Use a small delay to ensure page is fully loaded
     const timer = setTimeout(() => {
@@ -166,6 +169,27 @@ export default function GraveLocatorPage() {
       if (timeout) clearTimeout(timeout);
     };
   }, [searchQuery, cemeteryId]);
+
+  // Handle bookmark navigation when plots are loaded
+  useEffect(() => {
+    const deceasedId = searchParams.get('deceased_id');
+    if (deceasedId && plots.length > 0) {
+      // Automatically trigger search and directions for bookmarked person
+      setFromBookmark(true);
+      handleBookmarkNavigation(deceasedId);
+    }
+  }, [plots, searchParams]);
+
+  // Trigger directions when coming from bookmark and user location is available
+  useEffect(() => {
+    if (fromBookmark && selectedResult && userLocation && plots.length > 0) {
+      const plot = plots.find(p => p.id === selectedResult.plot_id);
+      if (plot && plot.latitude && plot.longitude) {
+        handleGetDirections([plot.latitude, plot.longitude]);
+        setFromBookmark(false); // Reset flag
+      }
+    }
+  }, [fromBookmark, selectedResult, userLocation, plots]);
 
   const requestLocation = () => {
     if (!navigator.geolocation) {
@@ -359,6 +383,8 @@ export default function GraveLocatorPage() {
         // Add bookmark
         const newBookmark = {
           id: selectedResult.id,
+          deceased_id: selectedResult.deceased_id,
+          plot_id: selectedResult.plot_id,
           name: `${selectedResult.first_name} ${selectedResult.last_name}`,
           cemeteryId: cemeteryId,
           cemeteryName: cemetery?.name || 'Unknown Cemetery',
@@ -372,6 +398,25 @@ export default function GraveLocatorPage() {
       setSelectedResult({ ...selectedResult });
     } catch (error) {
       console.error('Error toggling bookmark:', error);
+    }
+  };
+
+  const handleBookmarkNavigation = async (deceasedId: string) => {
+    try {
+      // Search for the deceased person by ID
+      const response = await fetch(
+        `/api/deceased/search?q=${deceasedId}&cemetery_id=${cemeteryId}&page=1&pageSize=20`
+      );
+      const data = await response.json();
+      
+      if (data.results && data.results.length > 0) {
+        const result = data.results[0];
+        setHighlightedPlotId(result.plot_id);
+        setSelectedResult(result);
+        // The useEffect will handle triggering directions when location is available
+      }
+    } catch (error) {
+      console.error('Error loading bookmark:', error);
     }
   };
 

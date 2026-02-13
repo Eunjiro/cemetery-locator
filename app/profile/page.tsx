@@ -13,6 +13,8 @@ interface SearchHistoryItem {
 
 interface Bookmark {
   id: string;
+  deceased_id?: string;
+  plot_id?: number;
   name: string;
   cemeteryId: string;
   cemeteryName: string;
@@ -209,7 +211,7 @@ export default function ProfilePage() {
                     <div key={item.id} className="p-4 hover:bg-gray-50 transition-colors">
                       <div className="flex items-start justify-between">
                         <button
-                          onClick={() => router.push(`/${item.cemeteryId}?search=${encodeURIComponent(item.name)}`)}
+                          onClick={() => router.push(`/${item.cemeteryId}?deceased_id=${item.deceased_id || item.id}`)}
                           className="flex-1 text-left touch-manipulation"
                         >
                           <div className="flex items-start gap-2">
