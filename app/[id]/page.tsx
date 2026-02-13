@@ -328,7 +328,7 @@ export default function GraveLocatorPage() {
       const history = JSON.parse(localStorage.getItem('searchHistory') || '[]');
       const newItem = {
         id: result.id,
-        name: result.name,
+        name: `${result.first_name} ${result.last_name}`,
         cemeteryName: cemetery?.name || 'Unknown Cemetery',
         searchedAt: new Date().toISOString(),
       };
@@ -359,7 +359,7 @@ export default function GraveLocatorPage() {
         // Add bookmark
         const newBookmark = {
           id: selectedResult.id,
-          name: selectedResult.name,
+          name: `${selectedResult.first_name} ${selectedResult.last_name}`,
           cemeteryId: cemeteryId,
           cemeteryName: cemetery?.name || 'Unknown Cemetery',
           addedAt: new Date().toISOString(),
