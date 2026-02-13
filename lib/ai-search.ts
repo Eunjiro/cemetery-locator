@@ -131,7 +131,8 @@ export function parseNaturalLanguageQuery(query: string): SearchContext {
         fullName = fullName.trim();
         const nameParts = fullName.split(/\s+/);
         if (nameParts.length === 1) {
-          context.lastName = nameParts[0];
+          // Single name - could be first or last, store in firstName for broader matching
+          context.firstName = nameParts[0];
           context.fullName = nameParts[0].toLowerCase();
         } else if (nameParts.length === 2) {
           context.firstName = nameParts[0];

@@ -59,34 +59,61 @@ export async function GET(request: NextRequest) {
 
     // If there's a name component, search by extracted names, otherwise use full query
     if (hasNameFilter) {
+      // Extract clean name from query (remove date keywords and years)
+      const cleanName = query
+        .replace(/\b(died|born|buried|namatay|ipinanganak|pumanaw|yumao|in|at|on|noong)\b/gi, '')
+        .replace(/\b(19\d{2}|20\d{2})\b/g, '')
+        .replace(/\b(january|february|march|april|may|june|july|august|september|october|november|december|enero|pebrero|marso|abril|mayo|hunyo|hulyo|agosto|setyembre|oktubre|nobyembre|disyembre)\b/gi, '')
+        .replace(/[-\/]/g, ' ')
+        .trim();
+      
       // Use extracted name parts for more accurate matching
       sqlQuery += ` AND (`;
       let nameConditionsAdded = false;
 
-      if (context.firstName) {
-        sqlQuery += `LOWER(d.first_name) LIKE LOWER($${paramIndex})`;
+      // If we have firstName and lastName, require both to match
+      if (context.firstName && context.lastName) {
+        sqlQuery += `(
+          LOWER(d.first_name) LIKE LOWER($${paramIndex}) AND
+          LOWER(d.last_name) LIKE LOWER($${paramIndex + 1})
+        )`;
+        params.push(`%${context.firstName}%`, `%${context.lastName}%`);
+        paramIndex += 2;
+        nameConditionsAdded = true;
+      }
+      // If we only have firstName (single name like "jiro"), search both fields
+      else if (context.firstName) {
+        sqlQuery += `(
+          LOWER(d.first_name) LIKE LOWER($${paramIndex}) OR
+          LOWER(d.last_name) LIKE LOWER($${paramIndex}) OR
+          LOWER(d.first_name || ' ' || d.last_name) LIKE LOWER($${paramIndex})
+        )`;
         params.push(`%${context.firstName}%`);
         paramIndex++;
         nameConditionsAdded = true;
       }
-      
-      if (context.lastName) {
-        if (nameConditionsAdded) sqlQuery += ' AND ';
-        sqlQuery += `LOWER(d.last_name) LIKE LOWER($${paramIndex})`;
+      // If we only have lastName, search both fields
+      else if (context.lastName) {
+        sqlQuery += `(
+          LOWER(d.first_name) LIKE LOWER($${paramIndex}) OR
+          LOWER(d.last_name) LIKE LOWER($${paramIndex}) OR
+          LOWER(d.first_name || ' ' || d.last_name) LIKE LOWER($${paramIndex})
+        )`;
         params.push(`%${context.lastName}%`);
         paramIndex++;
         nameConditionsAdded = true;
       }
 
-      // Also check full name match as fallback
-      if (nameConditionsAdded) sqlQuery += ' OR ';
-      sqlQuery += `(
-        LOWER(d.first_name) LIKE LOWER($${paramIndex}) OR
-        LOWER(d.last_name) LIKE LOWER($${paramIndex}) OR
-        LOWER(d.first_name || ' ' || d.last_name) LIKE LOWER($${paramIndex})
-      )`;
-      params.push(`%${query.replace(/\b(died|born|buried|namatay|ipinanganak|in|at|on|noong)\b/gi, '').trim()}%`);
-      paramIndex++;
+      // Also check cleaned full query as fallback
+      if (nameConditionsAdded && cleanName) {
+        sqlQuery += ` OR (
+          LOWER(d.first_name) LIKE LOWER($${paramIndex}) OR
+          LOWER(d.last_name) LIKE LOWER($${paramIndex}) OR
+          LOWER(d.first_name || ' ' || d.last_name) LIKE LOWER($${paramIndex})
+        )`;
+        params.push(`%${cleanName}%`);
+        paramIndex++;
+      }
 
       sqlQuery += ')';
     } else if (!hasDateFilter) {
