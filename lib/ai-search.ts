@@ -96,8 +96,10 @@ export function parseNaturalLanguageQuery(query: string): SearchContext {
     /(?:find|looking for|where is|locate|search for|show me|who is)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3})/i,
     // Filipino: "Hanap si Juan", "Hanapin si Maria", "Nasaan si Pedro"
     /(?:hanap|hanapin|nasaan|saan|sino)\s+(?:si)?\s*([A-Z][a-z]+(?:\s+(?:ng|na)?\s*[A-Z][a-z]+){1,3})/i,
-    // English: "John Smith died", "Mary Jones buried", "James Brown's grave"
-    /([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3})\s+(?:died|buried|grave|passed|'s grave|family|plot)/i,
+    // English: "John Smith died", "Mary Jones buried", "James Brown's grave" (case-insensitive for partial names)
+    /([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3})\s+(?:died|buried|grave|passed|'s grave|family|plot)/i,
+    // Partial name before date keywords: "Jiro died", "maria born" (case-insensitive)
+    /\b([a-zA-Z]{3,})\s+(?:died|born|buried|namatay|ipinanganak)/i,
     // Filipino: "Juan dela Cruz namatay", "Maria Santos yumao"
     /([A-Z][a-z]+(?:\s+(?:dela|de la|delos|de los|ng)?\s*[A-Z][a-z]+){1,3})\s+(?:namatay|pumanaw|yumao|yumaong|nailibing)/i,
     // Honorifics: "G./Gng./Bb./Mr./Mrs./Ms./Dr. Name"

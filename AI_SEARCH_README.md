@@ -100,6 +100,8 @@ The system works perfectly fine without any API key! It uses an intelligent keyw
 "John M. Smith"                       → Name with middle initial
 "Dr. Robert dela Cruz"                → Name with honorific
 "Looking for Juanita aged 75"         → Name with age
+"Jiro died 2026"                      → Partial name + date (finds "Eunjiro")
+"mary 2020"                           → Case-insensitive partial match
 ```
 
 ### Plot & Location Search
@@ -114,6 +116,7 @@ The system works perfectly fine without any API key! It uses an intelligent keyw
 ### Date & Age Search
 ```
 "2020"                                → All deaths in 2020
+"died 2026"                           → All deaths in 2026 (natural language)
 "January"                             → All deaths in January (any year)
 "December 2020"                       → Specific month and year
 "January-March"                       → Month range (any year)
@@ -142,10 +145,12 @@ The system works perfectly fine without any API key! It uses an intelligent keyw
 ### Combined Search (Name + Date/Month)
 ```
 "John Smith 2020"                     → Name and year
+"Jiro died 2026"                      → Partial name + date (finds "Eunjiro Marbilla")
 "Maria Santos January 2015"           → Name, month, and year
 "Find Juan dela Cruz died 2020-2026"  → Name and year range
 "Pedro namatay Enero 2019"            → Filipino name and date
 "Mary born 1950 died December 2020"   → Name, birth year, and death month
+"maria died 2020"                     → Case-insensitive name + year
 ```
 
 ### Family & Relationship Search

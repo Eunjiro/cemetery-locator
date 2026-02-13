@@ -45,30 +45,62 @@ export async function GET(request: NextRequest) {
       INNER JOIN burials b ON d.id = b.deceased_id
       INNER JOIN grave_plots gp ON b.plot_id = gp.id
       INNER JOIN cemeteries c ON gp.cemetery_id = c.id
-      WHERE (
-        LOWER(d.first_name) LIKE LOWER($1) OR
-        LOWER(d.last_name) LIKE LOWER($1) OR
-        LOWER(d.first_name || ' ' || d.last_name) LIKE LOWER($1) OR
-        LOWER(gp.plot_number) LIKE LOWER($1)
+      WHERE 1=1
     `;
 
-    const params: any[] = [`%${query}%`];
-    let paramIndex = 2;
+    const params: any[] = [];
+    let paramIndex = 1;
 
-    // Add structured filters from parsed query
-    if (context.firstName) {
-      sqlQuery += ` OR LOWER(d.first_name) LIKE LOWER($${paramIndex})`;
-      params.push(`%${context.firstName}%`);
+    // Determine if this is a date-only search or includes name
+    const hasDateFilter = context.yearOfDeath || context.yearOfBirth || context.dateRange || 
+                         context.monthOfDeath || context.monthOfBirth || context.monthRange || 
+                         context.specificDate;
+    const hasNameFilter = context.firstName || context.lastName || context.fullName;
+
+    // If there's a name component, search by extracted names, otherwise use full query
+    if (hasNameFilter) {
+      // Use extracted name parts for more accurate matching
+      sqlQuery += ` AND (`;
+      let nameConditionsAdded = false;
+
+      if (context.firstName) {
+        sqlQuery += `LOWER(d.first_name) LIKE LOWER($${paramIndex})`;
+        params.push(`%${context.firstName}%`);
+        paramIndex++;
+        nameConditionsAdded = true;
+      }
+      
+      if (context.lastName) {
+        if (nameConditionsAdded) sqlQuery += ' AND ';
+        sqlQuery += `LOWER(d.last_name) LIKE LOWER($${paramIndex})`;
+        params.push(`%${context.lastName}%`);
+        paramIndex++;
+        nameConditionsAdded = true;
+      }
+
+      // Also check full name match as fallback
+      if (nameConditionsAdded) sqlQuery += ' OR ';
+      sqlQuery += `(
+        LOWER(d.first_name) LIKE LOWER($${paramIndex}) OR
+        LOWER(d.last_name) LIKE LOWER($${paramIndex}) OR
+        LOWER(d.first_name || ' ' || d.last_name) LIKE LOWER($${paramIndex})
+      )`;
+      params.push(`%${query.replace(/\b(died|born|buried|namatay|ipinanganak|in|at|on|noong)\b/gi, '').trim()}%`);
+      paramIndex++;
+
+      sqlQuery += ')';
+    } else if (!hasDateFilter) {
+      // No name or date filters, use full query string
+      sqlQuery += ` AND (
+        LOWER(d.first_name) LIKE LOWER($${paramIndex}) OR
+        LOWER(d.last_name) LIKE LOWER($${paramIndex}) OR
+        LOWER(d.first_name || ' ' || d.last_name) LIKE LOWER($${paramIndex}) OR
+        LOWER(gp.plot_number) LIKE LOWER($${paramIndex})
+      )`;
+      params.push(`%${query}%`);
       paramIndex++;
     }
-    
-    if (context.lastName) {
-      sqlQuery += ` OR LOWER(d.last_name) LIKE LOWER($${paramIndex})`;
-      params.push(`%${context.lastName}%`);
-      paramIndex++;
-    }
-
-    sqlQuery += ')';
+    // If only date filter, no name WHERE clause needed
 
     // Add date range filtering if detected
     if (context.dateRange) {
