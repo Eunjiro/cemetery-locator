@@ -90,6 +90,34 @@ function normalizeText(text: string): string {
 }
 
 /**
+ * Check if a word is likely a name (not a keyword/filler word)
+ */
+function isLikelyName(word: string): boolean {
+  const nonNameWords = [
+    // English filler/keywords
+    'about', 'around', 'approximately', 'roughly', 'maybe', 'probably', 
+    'possibly', 'likely', 'think', 'was', 'were', 'been', 'have', 'has',
+    'died', 'born', 'bornd', 'buried', 'old', 'years', 'year', 'age', 'aged',
+    'the', 'and', 'or', 'but', 'from', 'with', 'for', 'this', 'that',
+    'find', 'search', 'show', 'tell', 'help', 'where', 'who', 'what', 'when',
+    'someone', 'somebody', 'person', 'people', 'named', 'called',
+    'could', 'would', 'should', 'will', 'can', 'may', 'might',
+    'he', 'she', 'they', 'his', 'her', 'hes', 'shes', 'him', 'them',
+    'is', 'are', 'am', 'be', 'do', 'does', 'did', 'not', 'no', 'yes',
+    'at', 'in', 'on', 'of', 'to', 'by', 'up', 'an', 'if', 'so', 'it', 'me', 'we',
+    // Filipino filler/keywords
+    'namatay', 'pumanaw', 'yumao', 'ipinanganak', 'siguro', 'marahil',
+    'hanap', 'hanapin', 'nasaan', 'sino', 'ano', 'alin', 'saan', 'kailan',
+    'asan', 'nasan', 'ayan',
+    'tao', 'taong', 'pangalan', 'name', 'yung', 'yun', 'ang', 'nga',
+    'pwede', 'maaari', 'gusto', 'nais', 'kailangan', 'lang', 'naman',
+    'kasi', 'kung', 'kapag', 'pag', 'para', 'dahil',
+    'si', 'ni', 'kay', 'sa', 'na', 'ng', 'ba', 'po', 'mga', 'ko', 'mo',
+  ];
+  return !nonNameWords.includes(word.toLowerCase()) && word.length > 1;
+}
+
+/**
  * Expand a name to include nickname variations
  */
 function expandNicknames(name: string): string[] {
@@ -153,7 +181,41 @@ export function parseNaturalLanguageQuery(query: string): SearchContext {
   const context: SearchContext = { query };
   // Normalize query
   const normalizedQuery = query.trim();
-  const queryLower = normalizedQuery.toLowerCase();
+  let queryLower = normalizedQuery.toLowerCase();
+  
+  // Remove conversational prefixes and fillers to make parsing easier
+  const conversationalPrefixes = [
+    // English conversational starters
+    /^(?:can you|could you|would you|will you|please|could you please|can you please|would you please)\s+/i,
+    /^(?:help me|help me to|i need to|i want to|i would like to|i'd like to|let me)\s+/i,
+    /^(?:find|search|search for|look for|looking for|locate|show me|tell me|get me)\s+/i,
+    /^(?:where is|where's|who is|who's|what is|what's)\s+/i,
+    /^(?:do you know|can you tell me|could you show me)\s+/i,
+    // Filipino conversational starters
+    /^(?:pwede|pwede mo|pwede mo ba|maaari|maaari mo|maaari mo ba)\s+/i,
+    /^(?:tulungan mo ako|tulungan|pakitulungan|pakihanap|pakisearch)\s+/i,
+    /^(?:gusto ko|gusto kong|nais ko|nais kong|kailangan ko|kailangan kong)\s+/i,
+    /^(?:magtanong|tanong|ask|question)\s+/i,
+    // Hybrid patterns
+    /^(?:can you please hanap|pwede mo find|help me hanap)\s+/i,
+    // Filler words and phrases
+    /^(?:um|uh|well|so|okay|ok|sige|oo|yes|yeah|yup)\s+/i,
+  ];
+  
+  // Apply multiple passes to remove nested conversational patterns
+  for (let i = 0; i < 3; i++) {
+    let changed = false;
+    for (const prefix of conversationalPrefixes) {
+      const before = queryLower;
+      queryLower = queryLower.replace(prefix, '');
+      if (before !== queryLower) changed = true;
+    }
+    if (!changed) break;
+  }
+  
+  // Remove common filler words and conversational noise throughout the query
+  const fillerWords = /\b(um|uh|hmm|like|you know|i think|i guess|kasi|eh|diba|di ba|alam mo|alam mo ba|yung|yun|nga|naman|lang|po|opo|ho|oho|ba|pala|din|rin|daw|raw|sana|talaga)\b/gi;
+  queryLower = queryLower.replace(fillerWords, ' ').replace(/\s+/g, ' ').trim();
 
   // Check if query is just a year (e.g., "2006")
   const yearOnlyMatch = /^(19\d{2}|20\d{2})$/.test(normalizedQuery);
@@ -198,22 +260,72 @@ export function parseNaturalLanguageQuery(query: string): SearchContext {
     'hanap', 'hanapin', 'nasaan', 'saan', 'namatay', 'pumanaw', 'yumao',
     'ipinanganak', 'libing', 'libingan', 'puntod', 'nitso', 'kamatayan',
     'nailibing', 'pamilya', 'angkan', 'lahi', 'kamag-anak', 'yumaong',
-    'hinahanap', 'hinanap', 'namayapa', 'sumakabilang-buhay', 'katawan', 'patay', 'bata', 'matanda', 'asawa', 'anak', 'ina', 'ama', 'magulang', 'kapatid', 'kaibigan', 'kaanak', 'kamag-anak', 'ka-pamilya', 'kaibigan', 'kaanak', 'kaibigan', 'kaibigan', 'kaibigan'
+    'hinahanap', 'hinanap', 'namayapa', 'sumakabilang-buhay', 'katawan', 'patay',
+    'bata', 'matanda', 'asawa', 'anak', 'ina', 'ama', 'magulang', 'kapatid',
+    'pwede', 'maaari', 'gusto', 'nais', 'kailangan', 'tulungan', 'pakihanap',
+    'magtanong', 'tanong', 'sige', 'kasi', 'yung', 'yun', 'nga', 'naman', 'lang', 'po',
+    'sino', 'alin', 'ano', 'paano', 'bakit', 'kailan', 'saan', 'magkano',
+    'taong', 'edad', 'gulang', 'taon', 'buwan', 'araw',
   ];
   context.isFilipino = filipinoKeywords.some(word => queryLower.includes(word));
-  // Extract names using multiple patterns (English and Filipino)
+  // Extract names using multiple patterns (English, Filipino, and Hybrid)
+  // Note: We duplicate patterns for case-insensitive name capture (both Capitalized and lowercase)
   const namePatterns = [
-    // English with quotes: "Find \"John Smith\""
-    /(?:find|looking for|where is|locate|search for|show me)\s+[\"']([^\"']+)[\"']/i,
-    // English: "Find John Smith", "looking for Mary Jones"
-    /(?:find|looking for|where is|locate|search for|show me|who is)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3})/i,
-    // Filipino: "Hanap si Juan", "Hanapin si Maria", "Nasaan si Pedro"
-    /(?:hanap|hanapin|nasaan|saan|sino)\s+(?:si)?\s*([A-Z][a-z]+(?:\s+(?:ng|na)?\s*[A-Z][a-z]+){1,3})/i,
-    // English: "John Smith died", "Mary Jones buried", "James Brown's grave" (case-insensitive for partial names)
-    /([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3})\s+(?:died|buried|grave|passed|'s grave|family|plot)/i,
-    // Partial name before date keywords: "Jiro died", "maria born" (case-insensitive)
-    /\b([a-zA-Z]{3,})\s+(?:died|born|buried|namatay|ipinanganak)/i,
-    // Filipino: "Juan dela Cruz namatay", "Maria Santos yumao"
+    // ===== QUOTED NAMES =====
+    // "Find \"John Smith\"", 'hanap "maria santos"'
+    /(?:find|looking for|where is|locate|search for|show me|hanap|hanapin|nasaan)\s+[\"']([^\"']+)[\"']/i,
+    
+    // ===== ENGLISH CONVERSATIONAL (Capitalized) =====
+    // "Find John Smith", "looking for Mary Jones", "tell me about John"
+    /(?:find|looking for|where is|locate|search for|show me|who is|tell me about|do you know)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3})/i,
+    
+    // ===== ENGLISH CONVERSATIONAL (lowercase — voice-to-text / casual) =====
+    // "find jiro", "looking for maria", "where is john", "tell me about pedro"
+    /(?:find|looking for|where is|where's|locate|search for|show me|who is|tell me about|do you know)\s+([a-z]{2,}(?:\s+[a-z]{2,}){0,2})/i,
+    
+    // ===== FILIPINO PATTERNS =====
+    // "Hanap si Juan", "Hanapin si Maria", "Nasaan si Pedro"
+    /(?:hanap|hanapin|nasaan|saan|sino|alin|pakihanap)\s+(?:si|ni|kay|ang|yung)?\s*([A-Z][a-z]+(?:\s+(?:ng|na)?\s*[A-Z][a-z]+){1,3})/i,
+    // Same but lowercase: "hanap si juan", "nasaan si maria"
+    /(?:hanap|hanapin|nasaan|saan|sino|pakihanap)\s+(?:si|ni|kay|ang|yung)?\s+([a-z]{2,}(?:\s+[a-z]{2,}){0,2})/i,
+    
+    // ===== HYBRID (English + Filipino) =====
+    // "Find si Juan", "Hanap ang John", "Where si Maria", "locate si pedro"
+    /(?:find|hanap|where|nasaan|locate|hanapin|search|show)\s+(?:si|ni|kay|ang|yung)?\s+([a-zA-Z]{2,}(?:\s+[a-zA-Z]{2,}){0,2})/i,
+    
+    // ===== NAME + ACTION KEYWORD =====
+    // "John Smith died", "Mary Jones buried", "James Brown's grave"
+    /([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3})\s+(?:died|buried|grave|passed|deceased|'s grave|family|plot)/i,
+    // lowercase: "john smith died", "maria namatay"
+    /\b([a-z]{2,}(?:\s+[a-z]{2,}){0,2})\s+(?:died|buried|passed|deceased|namatay|pumanaw|yumao|nailibing)/i,
+    
+    // ===== CONVERSATIONAL IDENTIFICATION =====
+    // "someone named John", "person called Maria", "tao na pangalan Juan"
+    /(?:someone|somebody|person|people|tao|taong?|isang)\s+(?:named|called|with name|na pangalan|na name|na nagngangalang)\s+([a-zA-Z]{2,}(?:\s+[a-zA-Z]{2,}){0,2})/i,
+    
+    // ===== NAME BEFORE DATE/AGE KEYWORDS =====
+    // "Jiro died", "maria born", "jiro bornd", "pedro about 20"
+    /\b([a-zA-Z]{2,})\s+(?:died|born|bornd|buried|namatay|ipinanganak|pumanaw|yumao|about|around|age|aged|mga)/i,
+    
+    // ===== CASUAL / COLLOQUIAL =====
+    // "where's Juan at", "who's Maria", "ano si Pedro", "sino si maria"
+    /(?:where's|who's|what's|ano\s+ba|sino\s+ba|sino|ano|asan|nasan)\s+(?:si|ni|kay)?\s*([a-zA-Z]{2,}(?:\s+[a-zA-Z]{2,}){0,2})/i,
+    
+    // ===== QUESTION PATTERNS =====
+    // "any record of john?", "may record ba ni maria?", "meron bang juan?"
+    /(?:any record|may record|meron|mayroon|record|data)\s+(?:of|for|about|ba ni|ba ng|ba si|ba kay|ni|ng)?\s+([a-zA-Z]{2,}(?:\s+[a-zA-Z]{2,}){0,2})/i,
+    
+    // ===== "I'M LOOKING FOR" PATTERNS =====
+    // "i'm looking for john", "we're looking for maria"
+    /(?:i'm|i am|we're|we are)\s+(?:looking for|searching for|trying to find)\s+([a-zA-Z]{2,}(?:\s+[a-zA-Z]{2,}){0,2})/i,
+    
+    // ===== POSSESSIVE / RELATIONAL =====
+    // "the grave of john", "tomb of maria", "libingan ni pedro"
+    /(?:grave|tomb|burial|plot|puntod|libingan|nitso)\s+(?:of|ni|ng|para kay|para sa)\s+([a-zA-Z]{2,}(?:\s+[a-zA-Z]{2,}){0,2})/i,
+    
+    // ===== FILIPINO ACTION + NAME =====
+    // "Juan dela Cruz namatay", "Maria Santos yumao"
+    /([A-Z][a-z]+(?:\s+(?:dela|de la|delos|de los|ng)?\s*[A-Z][a-z]+){1,3})\s+(?:namatay|pumanaw|yumao|yumaong|nailibing)/i,
     /([A-Z][a-z]+(?:\s+(?:dela|de la|delos|de los|ng)?\s*[A-Z][a-z]+){1,3})\s+(?:namatay|pumanaw|yumao|yumaong|nailibing)/i,
     // Honorifics: "G./Gng./Bb./Mr./Mrs./Ms./Dr. Name"
     /(?:G\.|Gng\.|Bb\.|Mr\.|Mrs\.|Ms\.|Dr\.)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3})/i,
@@ -222,6 +334,50 @@ export function parseNaturalLanguageQuery(query: string): SearchContext {
     // Standalone capitalized words (2-3 word names)
     /\b([A-Z][a-z]+)\s+([A-Z][a-z]+)(?:\s+([A-Z][a-z]+))?\b/,
   ];
+
+  // If no name found yet, try extracting from cleaned queryLower as last resort
+  // This handles pure conversational queries like "can you find jiro about 20 age"
+  if (!context.firstName && !context.lastName) {
+    // Remove all known keywords/fillers from the cleaned query, whatever remains is likely a name
+    let residual = queryLower
+      .replace(/\b(can|you|could|would|please|help|me|we|find|search|look|for|show|tell|get|locate|where|who|what|when|how|is|are|was|were|do|does|have|has|been|the|a|an|to|at|in|on|of|and|or|but|from|with|this|that|it|my|your|his|her|their|he|she|they|him|them|hes|shes|its)\b/gi, '')
+      .replace(/\b(hanap|hanapin|nasaan|saan|sino|si|ni|kay|ang|yung|ba|na|ng|sa|mga|ko|mo|niya|nila|natin|atin|amin|kanila|po|opo|ho|oho|asan|nasan|ayan)\b/gi, '')
+      .replace(/\b(died|born|bornd|buried|passed|deceased|death|age|aged|old|years?|yrs?|taon|gulang|edad)\b/gi, '')
+      .replace(/\b(namatay|pumanaw|yumao|ipinanganak|nailibing|kamatayan|patay|libing)\b/gi, '')
+      .replace(/\b(about|around|approximately|roughly|maybe|probably|possibly|likely|think|siguro|marahil|halos|mga|parang)\b/gi, '')
+      .replace(/\b(grave|tomb|burial|plot|puntod|libingan|nitso|sementeryo|cemetery|memorial)\b/gi, '')
+      .replace(/\b(record|data|someone|person|tao|any|meron|mayroon|pwede|maaari|gusto|nais|kailangan)\b/gi, '')
+      .replace(/\b(i'm|i am|we're|we are|looking|searching|trying|people)\b/gi, '')
+      .replace(/\b(19\d{2}|20\d{2})\b/g, '') // years
+      .replace(/\b\d{1,3}\b/g, '') // small numbers (ages)
+      .replace(/\b(january|february|march|april|may|june|july|august|september|october|november|december)\b/gi, '')
+      .replace(/\b(enero|pebrero|marso|abril|mayo|hunyo|hulyo|agosto|setyembre|oktubre|nobyembre|disyembre)\b/gi, '')
+      .replace(/[^a-zA-Z\s]/g, '') // Remove non-alpha chars
+      .replace(/\s+/g, ' ').trim();
+    
+    if (residual.length >= 2) {
+      const parts = residual.split(/\s+/).filter(p => p.length >= 2 && isLikelyName(p));
+      if (parts.length === 1) {
+        context.firstName = parts[0];
+        context.fullName = parts[0].toLowerCase();
+        context.intentType = 'find_person';
+      } else if (parts.length === 2) {
+        context.firstName = parts[0];
+        context.lastName = parts[1];
+        context.fullName = parts.join(' ').toLowerCase();
+        context.intentType = 'find_person';
+      } else if (parts.length >= 3) {
+        context.firstName = parts[0];
+        context.middleName = parts[1];
+        context.lastName = parts.slice(2).join(' ');
+        context.fullName = parts.join(' ').toLowerCase();
+        context.intentType = 'find_person';
+      }
+      // Add phonetic codes
+      if (context.firstName) context.soundexFirstName = soundex(context.firstName);
+      if (context.lastName) context.soundexLastName = soundex(context.lastName);
+    }
+  }
   for (const pattern of namePatterns) {
     const match = normalizedQuery.match(pattern);
     if (match) {
@@ -229,38 +385,53 @@ export function parseNaturalLanguageQuery(query: string): SearchContext {
       
       // Handle middle initial pattern (match[2] is middle, match[3] is last)
       if (match[3]) {
-        context.firstName = match[1].trim();
-        context.middleName = match[2].trim().replace('.', '');
-        context.lastName = match[3].trim();
-        context.fullName = `${context.firstName} ${context.middleName} ${context.lastName}`.toLowerCase();
+        const first = match[1].trim();
+        const middle = match[2].trim().replace('.', '');
+        const last = match[3].trim();
+        
+        if (isLikelyName(first) && isLikelyName(last)) {
+          context.firstName = first;
+          context.middleName = middle;
+          context.lastName = last;
+          context.fullName = `${first} ${middle} ${last}`.toLowerCase();
+        }
       }
       // If pattern captures two groups, second is last name
       else if (match[2] && match[2].length > 1) {
-        context.firstName = match[1].trim();
-        context.lastName = match[2].trim();
-        context.fullName = `${context.firstName} ${context.lastName}`.toLowerCase();
+        const first = match[1].trim();
+        const last = match[2].trim();
+        
+        if (isLikelyName(first) && isLikelyName(last)) {
+          context.firstName = first;
+          context.lastName = last;
+          context.fullName = `${first} ${last}`.toLowerCase();
+        }
       } else {
         // Otherwise split the full name
         fullName = fullName.trim();
-        const nameParts = fullName.split(/\s+/);
-        if (nameParts.length === 1) {
+        const nameParts = fullName.split(/\s+/).filter(part => isLikelyName(part));
+        
+        if (nameParts.length === 0) {
+          // No valid name parts found, skip this pattern
+          continue;
+        } else if (nameParts.length === 1) {
           // Single name - could be first or last, store in firstName for broader matching
           context.firstName = nameParts[0];
           context.fullName = nameParts[0].toLowerCase();
         } else if (nameParts.length === 2) {
           context.firstName = nameParts[0];
           context.lastName = nameParts[1];
-          context.fullName = fullName.toLowerCase();
+          context.fullName = nameParts.join(' ').toLowerCase();
         } else if (nameParts.length === 3) {
           context.firstName = nameParts[0];
           context.middleName = nameParts[1];
           context.lastName = nameParts[2];
-          context.fullName = fullName.toLowerCase();
+          context.fullName = nameParts.join(' ').toLowerCase();
         } else if (nameParts.length > 3) {
           // Compound last names (e.g., "dela Cruz", "de la Rosa")
           context.firstName = nameParts[0];
           context.lastName = nameParts.slice(1).join(' ');
-          context.fullName = fullName.toLowerCase();
+          context.fullName = nameParts.join(' ').toLowerCase();
         }
       }
       // Add phonetic codes for fuzzy matching
@@ -357,8 +528,17 @@ export function parseNaturalLanguageQuery(query: string): SearchContext {
 
   // Extract age at death and calculate potential birth years
   const agePatterns = [
-    /(?:died at|age|aged|was)\s+(\d{1,3})\s*(?:years?|yrs?|y\.o\.|yo)?/i,
-    /\b(\d{1,3})\s*(?:years?|yrs?)\s+old\b/i,
+    // Conversational patterns: "about 20 age", "around 25 years", "approximately 30"
+    // Use negative lookahead to exclude 4-digit years
+    /(?:about|around|approximately|roughly|maybe|probably|like|siguro|mga|halos)\s+(\d{1,3})(?!\d)\s*(?:years?|yrs?|y\.o\.|yo|age|taon|taong gulang)?/i,
+    // Traditional patterns: "died at age X", "aged X"
+    /(?:died at|age|aged|was|is|edad|gulang)\s+(\d{1,3})(?!\d)\s*(?:years?|yrs?|y\.o\.|yo|taon)?/i,
+    // Simple age: "20 years old", "25 yrs old", "30 taong gulang"
+    /\b(\d{1,3})(?!\d)\s*(?:years?|yrs?|taon|taong)\s+(?:old|gulang)\b/i,
+    // Just number with age: "20 age", "25 edad", "30 taon"
+    /\b(\d{1,3})(?!\d)\s+(?:age|edad|taon|gulang)\b/i,
+    // Hybrid: "mga 25 years", "around 30 taon" (not 4-digit)
+    /(?:mga|around|about)\s+(\d{1,3})(?!\d)\s+(?:years?|taon)/i,
   ];
   for (const pattern of agePatterns) {
     const ageMatch = normalizedQuery.match(pattern);
@@ -551,11 +731,24 @@ export function parseNaturalLanguageQuery(query: string): SearchContext {
       return keywords.some(kw => levenshteinDistance(word, kw) <= maxDist);
     };
     const words = queryLower.split(/\s+/).filter(w => w.length >= 4);
-    const birthKeywords = ['born', 'birth', 'ipinanganak', 'isinilang', 'kapanganakan'];
+    // Enhanced patterns with conversational language
+    const birthKeywords = ['born', 'birth', 'ipinanganak', 'isinilang', 'kapanganakan', 'bornd'];
     const deathKeywords = ['died', 'death', 'passed', 'buried', 'deceased', 'namatay', 'pumanaw', 'yumao', 'yumaong', 'nailibing', 'kamatayan'];
+    
     if (years.length === 1) {
-      const hasBirth = queryLower.match(/\b(born|birth|ipinanganak|isinilang|kapanganakan)\b/) || words.some(w => fuzzyMatchAny(w, birthKeywords));
-      const hasDeath = queryLower.match(/\b(died|death|passed|buried|deceased|namatay|pumanaw|yumao|yumaong|nailibing|kamatayan)\b/) || words.some(w => fuzzyMatchAny(w, deathKeywords));
+      // Check for conversational patterns: "I think born on/in 2023", "maybe born 2023"
+      const birthPatterns = [
+        /(?:I think|maybe|probably|possibly|might be|could be)?\s*(?:born|birth)\s+(?:on|in|at)?\s*(19\d{2}|20\d{2})/i,
+        /\b(born|birth|ipinanganak|isinilang|kapanganakan|bornd)\b/i,
+      ];
+      const deathPatterns = [
+        /(?:I think|maybe|probably|possibly|might)?\s*(?:died|death|passed)\s+(?:on|in|at)?\s*(19\d{2}|20\d{2})/i,
+        /\b(died|death|passed|buried|deceased|namatay|pumanaw|yumao|yumaong|nailibing|kamatayan)\b/i,
+      ];
+      
+      const hasBirth = birthPatterns.some(p => p.test(queryLower)) || words.some(w => fuzzyMatchAny(w, birthKeywords));
+      const hasDeath = deathPatterns.some(p => p.test(queryLower)) || words.some(w => fuzzyMatchAny(w, deathKeywords));
+      
       if (hasBirth) {
         context.yearOfBirth = years[0];
       } else if (hasDeath) {

@@ -59,12 +59,20 @@ export async function GET(request: NextRequest) {
 
     // If there's a name component, search by extracted names, otherwise use full query
     if (hasNameFilter) {
-      // Extract clean name from query (remove date keywords and years)
+      // Extract clean name from query (remove all filler/keyword words)
       const cleanName = query
-        .replace(/\b(died|born|buried|namatay|ipinanganak|pumanaw|yumao|in|at|on|noong)\b/gi, '')
+        .replace(/\b(can|you|could|would|please|help|me|find|search|look|for|show|tell|get|locate|where|who|what|is|are|was|were|do|does|have|has|been|the|a|an|to|at|in|on|of|and|or|but|from|with|this|that|it|my|your)\b/gi, '')
+        .replace(/\b(hanap|hanapin|nasaan|saan|sino|si|ni|kay|ang|yung|ba|na|ng|sa|mga|ko|mo|po|opo)\b/gi, '')
+        .replace(/\b(died|born|bornd|buried|passed|deceased|death|namatay|ipinanganak|pumanaw|yumao|nailibing|kamatayan)\b/gi, '')
+        .replace(/\b(about|around|approximately|roughly|maybe|probably|possibly|think|i think|siguro|marahil)\b/gi, '')
+        .replace(/\b(age|aged|old|years?|yrs?|taon|gulang|edad)\b/gi, '')
+        .replace(/\b(noong|mula|hanggang|simula|dati|noon|ngayon)\b/gi, '')
+        .replace(/\b(grave|tomb|burial|plot|puntod|libingan|nitso|record|data|info|someone|person|tao)\b/gi, '')
         .replace(/\b(19\d{2}|20\d{2})\b/g, '')
+        .replace(/\b\d{1,3}\b/g, '')
         .replace(/\b(january|february|march|april|may|june|july|august|september|october|november|december|enero|pebrero|marso|abril|mayo|hunyo|hulyo|agosto|setyembre|oktubre|nobyembre|disyembre)\b/gi, '')
         .replace(/[-\/]/g, ' ')
+        .replace(/\s+/g, ' ')
         .trim();
       
       // Use extracted name parts for more accurate matching
@@ -328,8 +336,9 @@ export async function GET(request: NextRequest) {
 
     // Generate "Did You Mean?" suggestions if no results and we have a name query
     let suggestions: string[] = [];
-    if (rankedResults.length === 0 && hasNameFilter) {
-      const searchName = context.firstName || context.lastName || query;
+    if (rankedResults.length === 0 && (hasNameFilter || !hasDateFilter)) {
+      // Search name from context first, or use the raw query if no name was extracted
+      const searchName = context.firstName || context.lastName || query.trim();
       if (searchName && searchName.length >= 3) {
         try {
           const suggestionQuery = `
@@ -343,8 +352,9 @@ export async function GET(request: NextRequest) {
               ) as distance
             FROM deceased_persons
             WHERE 
-              levenshtein(LOWER(first_name), LOWER($1)) <= 2
-              OR levenshtein(LOWER(last_name), LOWER($1)) <= 2
+              levenshtein(LOWER(first_name), LOWER($1)) <= 3
+              OR levenshtein(LOWER(last_name), LOWER($1)) <= 3
+              OR levenshtein(LOWER(first_name || ' ' || last_name), LOWER($1)) <= 4
             ORDER BY distance ASC
             LIMIT 5
           `;

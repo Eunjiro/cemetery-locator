@@ -67,10 +67,17 @@ export default function GraveLocatorPage() {
   const [showSearchTips, setShowSearchTips] = useState<boolean>(false);
   const [searchSuggestions, setSearchSuggestions] = useState<string[]>([]);
   const [fromBookmark, setFromBookmark] = useState<boolean>(false);
+  const [isListening, setIsListening] = useState<boolean>(false);
+  const [voiceSupported, setVoiceSupported] = useState<boolean>(false);
+  const recognitionRef = useRef<any>(null);
 
   useEffect(() => {
     fetchCemeteryData();
     fetchPlots();
+    
+    // Check for voice recognition support
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    setVoiceSupported(!!SpeechRecognition);
     
     // Automatically request location on page load for mobile experience
     // Use a small delay to ensure page is fully loaded
@@ -373,11 +380,16 @@ export default function GraveLocatorPage() {
     
     try {
       const bookmarks = JSON.parse(localStorage.getItem('bookmarks') || '[]');
-      const isBookmarked = bookmarks.some((item: any) => item.id === selectedResult.id);
+      const currentDeceasedId = selectedResult.deceased_id || selectedResult.id;
+      const isBookmarked = bookmarks.some((item: any) => 
+        (item.deceased_id || item.id) === currentDeceasedId
+      );
       
       if (isBookmarked) {
         // Remove bookmark
-        const updated = bookmarks.filter((item: any) => item.id !== selectedResult.id);
+        const updated = bookmarks.filter((item: any) => 
+          (item.deceased_id || item.id) !== currentDeceasedId
+        );
         localStorage.setItem('bookmarks', JSON.stringify(updated));
       } else {
         // Add bookmark
@@ -424,9 +436,75 @@ export default function GraveLocatorPage() {
     if (!selectedResult) return false;
     try {
       const bookmarks = JSON.parse(localStorage.getItem('bookmarks') || '[]');
-      return bookmarks.some((item: any) => item.id === selectedResult.id);
+      return bookmarks.some((item: any) => 
+        (item.deceased_id || item.id) === (selectedResult.deceased_id || selectedResult.id)
+      );
     } catch {
       return false;
+    }
+  };
+
+  const startVoiceRecognition = () => {
+    if (!voiceSupported) {
+      alert('Voice recognition is not supported in your browser. / Ang voice recognition ay hindi suportado sa iyong browser.');
+      return;
+    }
+
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const recognition = new SpeechRecognition();
+    
+    // Configure recognition
+    recognition.continuous = false; // Stop after one result
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+    
+    // Support both English and Filipino
+    recognition.lang = 'en-US'; // Default to English, can be changed to 'tl-PH' for Filipino
+    
+    recognition.onstart = () => {
+      setIsListening(true);
+    };
+    
+    recognition.onresult = (event: any) => {
+      const transcript = event.results[0][0].transcript;
+      setSearchQuery(transcript);
+      setIsListening(false);
+      
+      // Automatically perform search with the voice input
+      performSearch(transcript);
+    };
+    
+    recognition.onerror = (event: any) => {
+      console.error('Voice recognition error:', event.error);
+      setIsListening(false);
+      
+      if (event.error === 'no-speech') {
+        alert('No speech detected. Please try again. / Walang narinig. Subukan muli.');
+      } else if (event.error === 'audio-capture') {
+        alert('Microphone not found. / Walang microphone.');
+      } else if (event.error === 'not-allowed') {
+        alert('Microphone permission denied. / Ipinagkait ang pahintulot sa microphone.');
+      }
+    };
+    
+    recognition.onend = () => {
+      setIsListening(false);
+    };
+    
+    recognitionRef.current = recognition;
+    
+    try {
+      recognition.start();
+    } catch (error) {
+      console.error('Error starting voice recognition:', error);
+      setIsListening(false);
+    }
+  };
+
+  const stopVoiceRecognition = () => {
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+      setIsListening(false);
     }
   };
 
@@ -831,11 +909,32 @@ export default function GraveLocatorPage() {
                     <ul className="space-y-1 text-gray-700 ml-5">
                       <li>• "Show me people who died in 2020"</li>
                       <li>• "Find graves from January to March 2020"</li>
+                      <li>• "Can you find jiro about 20 age I think born on 2023"</li>
                       <li>• "Hanap ang mga yumao noong Enero 2020"</li>
                       <li>• "Where is Juan who died between 2015 and 2020?"</li>
                       <li>• "Nasaan si Maria na namatay 2019?"</li>
                     </ul>
                   </div>
+
+                  {/* Voice Search */}
+                  {voiceSupported && (
+                    <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-3 border border-blue-300">
+                      <h5 className="font-semibold text-gray-800 mb-2 flex items-center gap-1">
+                        <svg className="w-4 h-4 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M7 4a3 3 0 016 0v4a3 3 0 11-6 0V4zm4 10.93A7.001 7.001 0 0017 8a1 1 0 10-2 0A5 5 0 015 8a1 1 0 00-2 0 7.001 7.001 0 006 6.93V17H6a1 1 0 100 2h8a1 1 0 100-2h-3v-2.07z" clipRule="evenodd" />
+                        </svg>
+                        Voice Search / Paghahanap gamit ang Boses
+                      </h5>
+                      <p className="text-sm text-gray-700 mb-2">
+                        Click the microphone button to search using your voice! / I-click ang microphone para maghanap gamit ang iyong boses!
+                      </p>
+                      <ul className="space-y-1 text-gray-700 ml-5 text-xs">
+                        <li>• Speak naturally in English or Filipino</li>
+                        <li>• Try: "Find John Smith died 2020"</li>
+                        <li>• Try: "Hanap si Maria namatay 2019"</li>
+                      </ul>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -870,6 +969,31 @@ export default function GraveLocatorPage() {
                   </svg>
                 </div>
               )}
+              
+              {/* Voice Recognition Button */}
+              {voiceSupported && !isSearching && (
+                <button
+                  type="button"
+                  onClick={isListening ? stopVoiceRecognition : startVoiceRecognition}
+                  className={`absolute ${searchQuery ? 'right-14' : 'right-2'} top-1/2 -translate-y-1/2 p-2.5 rounded-lg transition-all touch-manipulation ${
+                    isListening 
+                      ? 'bg-red-500 hover:bg-red-600 text-white animate-pulse' 
+                      : 'bg-blue-500 hover:bg-blue-600 active:bg-blue-700 text-white'
+                  }`}
+                  title={isListening ? 'Stop listening' : 'Start voice search'}
+                >
+                  {isListening ? (
+                    <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8 7a1 1 0 00-1 1v4a1 1 0 001 1h4a1 1 0 001-1V8a1 1 0 00-1-1H8z" clipRule="evenodd" />
+                    </svg>
+                  ) : (
+                    <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M7 4a3 3 0 016 0v4a3 3 0 11-6 0V4zm4 10.93A7.001 7.001 0 0017 8a1 1 0 10-2 0A5 5 0 015 8a1 1 0 00-2 0 7.001 7.001 0 006 6.93V17H6a1 1 0 100 2h8a1 1 0 100-2h-3v-2.07z" clipRule="evenodd" />
+                    </svg>
+                  )}
+                </button>
+              )}
+              
               {searchQuery && (
                 <button
                   type="button"
