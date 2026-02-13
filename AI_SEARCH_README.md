@@ -102,7 +102,20 @@ The system works perfectly fine without any API key! It uses an intelligent keyw
 "Looking for Juanita aged 75"         → Name with age
 "Jiro died 2026"                      → Partial name + date (finds "Eunjiro")
 "mary 2020"                           → Case-insensitive partial match
-```
+// NEW: Nickname search
+"Bob Smith"                           → Finds "Robert Smith"
+"Mike died 2020"                      → Finds "Michael"
+"Jun dela Cruz"                       → Finds "Junior dela Cruz"
+"Tony"                                → Finds "Antonio" or "Anthony"
+
+// NEW: Name order flexibility
+"Smith John"                          → Finds "John Smith"
+"dela Cruz Juan"                      → Finds "Juan dela Cruz"
+
+// NEW: Special characters
+"Jose Garcia"                         → Finds "José Garcia"
+"Pena"                                → Finds "Peña"
+"OBrien"                              → Finds "O'Brien"```
 
 ### Plot & Location Search
 ```

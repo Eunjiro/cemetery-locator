@@ -5,6 +5,115 @@ interface EmbeddingResponse {
   embedding: number[];
 }
 
+// Nickname to full name mapping (English and Filipino)
+const nicknameMap: Record<string, string[]> = {
+  // English nicknames
+  'bob': ['robert', 'roberto'],
+  'bobby': ['robert', 'roberto'],
+  'rob': ['robert', 'roberto'],
+  'mike': ['michael', 'miguel'],
+  'mikey': ['michael', 'miguel'],
+  'chris': ['christopher', 'christian', 'cristina', 'christine'],
+  'alex': ['alexander', 'alexandra', 'alejandro', 'alejandra'],
+  'tony': ['antonio', 'anthony', 'antonia'],
+  'joe': ['joseph', 'jose', 'josefa'],
+  'joey': ['joseph', 'jose'],
+  'bill': ['william', 'guillermo'],
+  'billy': ['william', 'guillermo'],
+  'will': ['william', 'guillermo'],
+  'dick': ['richard', 'ricardo'],
+  'rick': ['richard', 'ricardo'],
+  'jim': ['james', 'jaime'],
+  'jimmy': ['james', 'jaime'],
+  'beth': ['elizabeth', 'isabel', 'isabela'],
+  'liz': ['elizabeth', 'elisabet'],
+  'tom': ['thomas', 'tomas'],
+  'tommy': ['thomas', 'tomas'],
+  'dan': ['daniel', 'danilo'],
+  'danny': ['daniel', 'danilo'],
+  'sam': ['samuel', 'samantha', 'samson'],
+  'max': ['maximilian', 'maximo', 'maxima'],
+  'ben': ['benjamin', 'benito', 'benigno'],
+  'benny': ['benjamin', 'benito', 'benigno'],
+  'matt': ['matthew', 'mateo'],
+  'dave': ['david', 'davina'],
+  'ann': ['anna', 'anne', 'ana', 'anita'],
+  'annie': ['anna', 'anne', 'ana', 'anita'],
+  'sue': ['susan', 'susana', 'suzanne'],
+  'kate': ['katherine', 'catalina', 'katrina'],
+  'katie': ['katherine', 'catalina', 'katrina'],
+  'meg': ['margaret', 'margarita'],
+  'maggie': ['margaret', 'margarita'],
+  
+  // Filipino nicknames
+  'jun': ['junior', 'jejomar', 'antonio'],
+  'boy': ['rogelio', 'rodrigo', 'roberto'],
+  'dodong': ['rodolfo', 'rodrigo'],
+  'nene': ['irene', 'nenita', 'nena'],
+  'baby': ['benigno', 'benita'],
+  'totoy': ['victor', 'victorio'],
+  'inday': ['linda', 'rosalinda'],
+  'lito': ['carlito', 'angelito', 'juanito'],
+  'lita': ['carlita', 'angelita'],
+  'bing': ['benigno', 'bienvenido'],
+  'dong': ['armando', 'eduardo', 'fernando'],
+  'dodo': ['teodoro', 'rodolfo'],
+  'pepe': ['jose', 'joseph'],
+  'peping': ['jose', 'joseph'],
+  'bong': ['bienvenido', 'bonifacio'],
+  'bongbong': ['ferdinand', 'bonifacio'],
+  'coring': ['socorro', 'corazon'],
+  'cora': ['corazon', 'socorro'],
+  'ditas': ['edita', 'perdita'],
+  'neneng': ['irene', 'nenita'],
+  'tita': ['teresita', 'juanita'],
+  'tito': ['teresito', 'albertito'],
+  'kikay': ['francisca', 'francheska'],
+  'kiko': ['francisco', 'enrico'],
+  'chito': ['jose', 'francisco'],
+  'nening': ['magdalena', 'elena'],
+  'ding': ['bernardino', 'orlando'],
+  'ping': ['josefina', 'pilar'],
+};
+
+/**
+ * Normalize text by removing accents and normalizing special characters
+ */
+function normalizeText(text: string): string {
+  return text
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // Remove diacritical marks (accents)
+    .replace(/[''′‚]/g, "'")          // Normalize apostrophes
+    .replace(/[–—−]/g, '-')           // Normalize dashes
+    .toLowerCase()
+    .trim();
+}
+
+/**
+ * Expand a name to include nickname variations
+ */
+function expandNicknames(name: string): string[] {
+  const normalized = normalizeText(name);
+  const variations = [name, normalized];
+  
+  // Check if this is a nickname and add full names
+  if (nicknameMap[normalized]) {
+    variations.push(...nicknameMap[normalized]);
+  }
+  
+  // Check if this might be a full name that has nicknames
+  for (const [nickname, fullNames] of Object.entries(nicknameMap)) {
+    if (fullNames.includes(normalized)) {
+      variations.push(nickname);
+      // Also add other full name variations
+      variations.push(...fullNames.filter(n => n !== normalized));
+    }
+  }
+  
+  // Remove duplicates and return
+  return [...new Set(variations)];
+}
+
 interface SearchContext {
   query: string;
   firstName?: string;
@@ -30,6 +139,10 @@ interface SearchContext {
   soundexFirstName?: string;
   soundexLastName?: string;
   intentType?: 'find_person' | 'find_location' | 'find_plot' | 'find_family' | 'general';
+  nameVariations?: string[]; // Nickname expansions
+  firstNameVariations?: string[]; // First name variations including nicknames
+  lastNameVariations?: string[]; // Last name variations including nicknames
+  reversed?: boolean; // If name order was reversed (lastName firstName)
 }
 
 /**
@@ -159,6 +272,33 @@ export function parseNaturalLanguageQuery(query: string): SearchContext {
     }
   }
 
+  // Expand names with nickname variations
+  if (context.firstName) {
+    context.firstNameVariations = expandNicknames(context.firstName);
+  }
+  if (context.lastName) {
+    context.lastNameVariations = expandNicknames(context.lastName);
+  }
+
+  // Try reversed name order (lastName firstName) if we have both
+  // This helps with queries like "Smith John" or "dela Cruz Juan"
+  if (context.firstName && context.lastName && !context.middleName) {
+    // Check if reversing makes more sense (common Filipino pattern)
+    const firstNormalized = normalizeText(context.firstName);
+    const lastNormalized = normalizeText(context.lastName);
+    
+    // Common Filipino surname particles that indicate this is likely a last name
+    const surnameParticles = ['dela', 'delos', 'de', 'la', 'los', 'del', 'san', 'santa'];
+    const hasParticle = surnameParticles.some(particle => 
+      firstNormalized.startsWith(particle) || lastNormalized.startsWith(particle)
+    );
+    
+    // If first name looks like it might be a surname, mark for reversal
+    if (hasParticle || context.firstName.length > context.lastName.length) {
+      context.reversed = true;
+    }
+  }
+
 
   // Extract plot number patterns
   const plotPatterns = [
@@ -215,7 +355,7 @@ export function parseNaturalLanguageQuery(query: string): SearchContext {
     }
   }
 
-  // Extract age at death
+  // Extract age at death and calculate potential birth years
   const agePatterns = [
     /(?:died at|age|aged|was)\s+(\d{1,3})\s*(?:years?|yrs?|y\.o\.|yo)?/i,
     /\b(\d{1,3})\s*(?:years?|yrs?)\s+old\b/i,
@@ -224,6 +364,15 @@ export function parseNaturalLanguageQuery(query: string): SearchContext {
     const ageMatch = normalizedQuery.match(pattern);
     if (ageMatch) {
       context.ageAtDeath = parseInt(ageMatch[1]);
+      
+      // Calculate potential birth year if we have death year
+      if (context.yearOfDeath && context.ageAtDeath) {
+        const birthYear = context.yearOfDeath - context.ageAtDeath;
+        // Add ±2 years range for uncertainty
+        if (!context.yearOfBirth) {
+          context.yearOfBirth = birthYear;
+        }
+      }
       break;
     }
   }
@@ -235,6 +384,16 @@ export function parseNaturalLanguageQuery(query: string): SearchContext {
     const age1 = parseInt(ageRangeMatch[1]);
     const age2 = parseInt(ageRangeMatch[2]);
     context.ageRange = { min: Math.min(age1, age2), max: Math.max(age1, age2) };
+    
+    // Calculate potential birth year range if we have death year
+    if (context.yearOfDeath && context.ageRange) {
+      const birthYearMax = context.yearOfDeath - context.ageRange.min;
+      const birthYearMin = context.yearOfDeath - context.ageRange.max;
+      // Store as birth year range for filtering
+      if (!context.dateRange) {
+        context.dateRange = { start: birthYearMin, end: birthYearMax };
+      }
+    }
   }
 
   // Extract relationship keywords (for family searches)

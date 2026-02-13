@@ -64,6 +64,7 @@ export default function GraveLocatorPage() {
   const [targetBearing, setTargetBearing] = useState<number | null>(null);
   const [aiEnabled, setAiEnabled] = useState<boolean>(false);
   const [showSearchTips, setShowSearchTips] = useState<boolean>(false);
+  const [searchSuggestions, setSearchSuggestions] = useState<string[]>([]);
 
   useEffect(() => {
     fetchCemeteryData();
@@ -279,6 +280,7 @@ export default function GraveLocatorPage() {
       const data = await response.json();
       setSearchResults(data.results || []);
       setAiEnabled(data.aiEnabled || false);
+      setSearchSuggestions(data.suggestions || []);
       
       // Update pagination state
       if (data.pagination) {
@@ -951,6 +953,28 @@ export default function GraveLocatorPage() {
                   <p className="text-gray-500 text-xs sm:text-sm mt-1">
                     No deceased persons found matching / Walang natagpuang yumaong tao na tumutugma sa &quot;{searchQuery}&quot;
                   </p>
+                  
+                  {/* Did You Mean? Suggestions */}
+                  {searchSuggestions.length > 0 && (
+                    <div className="mt-4 text-left">
+                      <p className="text-sm font-semibold text-gray-700 mb-2">Did you mean? / Ibig mo bang sabihin:</p>
+                      <div className="flex flex-wrap gap-2">
+                        {searchSuggestions.map((suggestion, index) => (
+                          <button
+                            key={index}
+                            onClick={() => {
+                              setSearchQuery(suggestion);
+                              performSearch(suggestion);
+                            }}
+                            className="px-3 py-1.5 bg-green-50 hover:bg-green-100 text-green-700 border border-green-300 rounded-full text-xs font-medium transition-colors"
+                          >
+                            {suggestion}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  
                   <div className="mt-4 text-left bg-gray-50 rounded-lg p-3 text-xs text-gray-600">
                     <p className="font-semibold mb-2">Search tips / Mga tip sa paghahanap:</p>
                     <ul className="space-y-1 list-disc list-inside">

@@ -71,36 +71,100 @@ export async function GET(request: NextRequest) {
       sqlQuery += ` AND (`;
       let nameConditionsAdded = false;
 
-      // If we have firstName and lastName, require both to match
+      // If we have firstName and lastName, try both normal and reversed order
       if (context.firstName && context.lastName) {
+        // Normal order: firstName lastName
         sqlQuery += `(
-          LOWER(d.first_name) LIKE LOWER($${paramIndex}) AND
-          LOWER(d.last_name) LIKE LOWER($${paramIndex + 1})
+          (LOWER(d.first_name) LIKE LOWER($${paramIndex}) AND LOWER(d.last_name) LIKE LOWER($${paramIndex + 1}))
+        `;
+        params.push(`%${context.firstName}%`, `%${context.lastName}%`);
+        paramIndex += 2;
+        
+        // Add nickname variations for firstName
+        if (context.firstNameVariations && context.firstNameVariations.length > 1) {
+          for (const variation of context.firstNameVariations) {
+            if (variation.toLowerCase() !== context.firstName.toLowerCase()) {
+              sqlQuery += ` OR (LOWER(d.first_name) LIKE LOWER($${paramIndex}) AND LOWER(d.last_name) LIKE LOWER($${paramIndex + 1}))`;
+              params.push(`%${variation}%`, `%${context.lastName}%`);
+              paramIndex += 2;
+            }
+          }
+        }
+        
+        // Add nickname variations for lastName
+        if (context.lastNameVariations && context.lastNameVariations.length > 1) {
+          for (const variation of context.lastNameVariations) {
+            if (variation.toLowerCase() !== context.lastName.toLowerCase()) {
+              sqlQuery += ` OR (LOWER(d.first_name) LIKE LOWER($${paramIndex}) AND LOWER(d.last_name) LIKE LOWER($${paramIndex + 1}))`;
+              params.push(`%${context.firstName}%`, `%${variation}%`);
+              paramIndex += 2;
+            }
+          }
+        }
+        
+        // Reversed order: lastName firstName (for queries like "Smith John")
+        sqlQuery += ` OR (LOWER(d.first_name) LIKE LOWER($${paramIndex}) AND LOWER(d.last_name) LIKE LOWER($${paramIndex + 1}))`;
+        params.push(`%${context.lastName}%`, `%${context.firstName}%`);
+        paramIndex += 2;
+        
+        // Middle name optional: "John Smith" should find "John Michael Smith"
+        // Check if full_name contains both first and last name (flexible middle name)
+        sqlQuery += ` OR (
+          LOWER(d.first_name || ' ' || COALESCE(d.middle_name, '') || ' ' || d.last_name) LIKE LOWER($${paramIndex})
+          AND LOWER(d.first_name || ' ' || COALESCE(d.middle_name, '') || ' ' || d.last_name) LIKE LOWER($${paramIndex + 1})
         )`;
         params.push(`%${context.firstName}%`, `%${context.lastName}%`);
         paramIndex += 2;
+        
+        sqlQuery += `)`;
         nameConditionsAdded = true;
       }
-      // If we only have firstName (single name like "jiro"), search both fields
+      // If we only have firstName (single name like "jiro"), search both fields with variations
       else if (context.firstName) {
         sqlQuery += `(
           LOWER(d.first_name) LIKE LOWER($${paramIndex}) OR
           LOWER(d.last_name) LIKE LOWER($${paramIndex}) OR
           LOWER(d.first_name || ' ' || d.last_name) LIKE LOWER($${paramIndex})
-        )`;
+        `;
         params.push(`%${context.firstName}%`);
         paramIndex++;
+        
+        // Add nickname variations
+        if (context.firstNameVariations && context.firstNameVariations.length > 1) {
+          for (const variation of context.firstNameVariations) {
+            if (variation.toLowerCase() !== context.firstName.toLowerCase()) {
+              sqlQuery += ` OR LOWER(d.first_name) LIKE LOWER($${paramIndex}) OR LOWER(d.last_name) LIKE LOWER($${paramIndex})`;
+              params.push(`%${variation}%`);
+              paramIndex++;
+            }
+          }
+        }
+        
+        sqlQuery += `)`;
         nameConditionsAdded = true;
       }
-      // If we only have lastName, search both fields
+      // If we only have lastName, search both fields with variations
       else if (context.lastName) {
         sqlQuery += `(
           LOWER(d.first_name) LIKE LOWER($${paramIndex}) OR
           LOWER(d.last_name) LIKE LOWER($${paramIndex}) OR
           LOWER(d.first_name || ' ' || d.last_name) LIKE LOWER($${paramIndex})
-        )`;
+        `;
         params.push(`%${context.lastName}%`);
         paramIndex++;
+        
+        // Add nickname variations
+        if (context.lastNameVariations && context.lastNameVariations.length > 1) {
+          for (const variation of context.lastNameVariations) {
+            if (variation.toLowerCase() !== context.lastName.toLowerCase()) {
+              sqlQuery += ` OR LOWER(d.first_name) LIKE LOWER($${paramIndex}) OR LOWER(d.last_name) LIKE LOWER($${paramIndex})`;
+              params.push(`%${variation}%`);
+              paramIndex++;
+            }
+          }
+        }
+        
+        sqlQuery += `)`;
         nameConditionsAdded = true;
       }
 
@@ -142,9 +206,16 @@ export async function GET(request: NextRequest) {
       params.push(context.yearOfDeath);
       paramIndex++;
     } else if (context.yearOfBirth) {
-      sqlQuery += ` AND EXTRACT(YEAR FROM d.date_of_birth) = $${paramIndex}`;
-      params.push(context.yearOfBirth);
-      paramIndex++;
+      // If birth year was calculated from age, add ±2 year tolerance
+      if (context.ageAtDeath) {
+        sqlQuery += ` AND EXTRACT(YEAR FROM d.date_of_birth) BETWEEN $${paramIndex} AND $${paramIndex + 1}`;
+        params.push(context.yearOfBirth - 2, context.yearOfBirth + 2);
+        paramIndex += 2;
+      } else {
+        sqlQuery += ` AND EXTRACT(YEAR FROM d.date_of_birth) = $${paramIndex}`;
+        params.push(context.yearOfBirth);
+        paramIndex++;
+      }
     }
 
     // Add month filtering for death date
@@ -196,9 +267,54 @@ export async function GET(request: NextRequest) {
     const countResult = await pool.query(countQuery, params);
     const totalResults = parseInt(countResult.rows[0]?.total || '0');
 
-    // Add pagination
+    // Add pagination with smart ordering
     const offset = (validPage - 1) * validPageSize;
-    sqlQuery += ` ORDER BY d.last_name, d.first_name LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+    
+    // Smart ordering: prioritize exact matches, then starts-with, then contains, then recent
+    let orderByClause = ` ORDER BY `;
+    
+    if (hasNameFilter) {
+      // Build smart ordering based on match quality
+      const searchFirstName = context.firstName?.toLowerCase() || '';
+      const searchLastName = context.lastName?.toLowerCase() || '';
+      
+      orderByClause += `
+        CASE
+          -- Exact full name match (highest priority)
+          WHEN LOWER(d.first_name || ' ' || d.last_name) = LOWER($${paramIndex}) THEN 1
+          -- Exact first name AND exact last name
+          WHEN LOWER(d.first_name) = LOWER($${paramIndex + 1}) AND LOWER(d.last_name) = LOWER($${paramIndex + 2}) THEN 2
+          -- Exact first name only
+          WHEN LOWER(d.first_name) = LOWER($${paramIndex + 1}) THEN 3
+          -- Exact last name only
+          WHEN LOWER(d.last_name) = LOWER($${paramIndex + 2}) THEN 4
+          -- First name starts with search term
+          WHEN LOWER(d.first_name) LIKE LOWER($${paramIndex + 1} || '%') THEN 5
+          -- Last name starts with search term  
+          WHEN LOWER(d.last_name) LIKE LOWER($${paramIndex + 2} || '%') THEN 6
+          -- First name contains search term
+          WHEN LOWER(d.first_name) LIKE LOWER('%' || $${paramIndex + 1} || '%') THEN 7
+          -- Last name contains search term
+          WHEN LOWER(d.last_name) LIKE LOWER('%' || $${paramIndex + 2} || '%') THEN 8
+          ELSE 9
+        END,
+        d.date_of_death DESC NULLS LAST,  -- Most recent deaths first
+        d.last_name,
+        d.first_name
+      `;
+      
+      // Add the search terms for ORDER BY
+      const fullSearchName = context.firstName && context.lastName 
+        ? `${context.firstName} ${context.lastName}`
+        : context.firstName || context.lastName || query;
+      params.push(fullSearchName, searchFirstName, searchLastName);
+      paramIndex += 3;
+    } else {
+      // Default ordering by most recent deaths
+      orderByClause += `d.date_of_death DESC NULLS LAST, d.last_name, d.first_name`;
+    }
+    
+    sqlQuery += orderByClause + ` LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
     params.push(validPageSize, offset);
 
     // Execute search query
@@ -210,6 +326,40 @@ export async function GET(request: NextRequest) {
       rankedResults = await rankSearchResults(query, result.rows, useAI);
     }
 
+    // Generate "Did You Mean?" suggestions if no results and we have a name query
+    let suggestions: string[] = [];
+    if (rankedResults.length === 0 && hasNameFilter) {
+      const searchName = context.firstName || context.lastName || query;
+      if (searchName && searchName.length >= 3) {
+        try {
+          const suggestionQuery = `
+            SELECT DISTINCT 
+              first_name,
+              last_name,
+              LEAST(
+                levenshtein(LOWER(first_name), LOWER($1)),
+                levenshtein(LOWER(last_name), LOWER($1)),
+                levenshtein(LOWER(first_name || ' ' || last_name), LOWER($1))
+              ) as distance
+            FROM deceased_persons
+            WHERE 
+              levenshtein(LOWER(first_name), LOWER($1)) <= 2
+              OR levenshtein(LOWER(last_name), LOWER($1)) <= 2
+            ORDER BY distance ASC
+            LIMIT 5
+          `;
+          
+          const suggestionResult = await pool.query(suggestionQuery, [searchName]);
+          suggestions = suggestionResult.rows.map(row => 
+            `${row.first_name} ${row.last_name}`.trim()
+          );
+        } catch (error) {
+          // Levenshtein extension might not be installed, skip suggestions
+          console.log('Levenshtein extension not available for suggestions');
+        }
+      }
+    }
+
     // Calculate pagination info
     const totalPages = Math.ceil(totalResults / validPageSize);
     const hasNextPage = validPage < totalPages;
@@ -217,6 +367,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ 
       results: rankedResults,
+      suggestions, // Add suggestions to response
       pagination: {
         page: validPage,
         pageSize: validPageSize,
