@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import Navbar from '@/components/PublicNavbar';
 import { getDirections, formatDistance, formatDuration, Route } from '@/lib/openrouteservice';
+import { translations, t, Language } from '@/lib/translations';
 
 const GraveLocatorMap = dynamic(() => import('@/components/GraveLocatorMap'), { ssr: false });
 
@@ -39,6 +40,11 @@ export default function GraveLocatorPage() {
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [showSearchResults, setShowSearchResults] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalResults, setTotalResults] = useState(0);
+  const [hasNextPage, setHasNextPage] = useState(false);
+  const [hasPrevPage, setHasPrevPage] = useState(false);
   const [highlightedPlotId, setHighlightedPlotId] = useState<number | null>(null);
   const [selectedResult, setSelectedResult] = useState<any | null>(null);
   const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
@@ -56,6 +62,8 @@ export default function GraveLocatorPage() {
   const instructionRefs = useRef<(HTMLDivElement | null)[]>([]);
   const [userHeading, setUserHeading] = useState<number | null>(null);
   const [targetBearing, setTargetBearing] = useState<number | null>(null);
+  const [aiEnabled, setAiEnabled] = useState<boolean>(false);
+  const [showSearchTips, setShowSearchTips] = useState<boolean>(false);
 
   useEffect(() => {
     fetchCemeteryData();
@@ -72,11 +80,19 @@ export default function GraveLocatorPage() {
       const iosEvent = event as DeviceOrientationEvent & { webkitCompassHeading?: number };
       
       if (iosEvent.webkitCompassHeading !== undefined) {
-        // iOS
+        // iOS - webkitCompassHeading gives degrees from North (0-360)
         setUserHeading(iosEvent.webkitCompassHeading);
       } else if (event.alpha !== null) {
-        // Android - alpha is 0-360 degrees
-        const heading = 360 - event.alpha;
+        // Android - alpha is rotation around z-axis
+        // Convert to compass heading (0 = North, 90 = East, 180 = South, 270 = West)
+        let heading = event.alpha;
+        
+        // Adjust for device orientation if beta and gamma are available
+        if (event.beta !== null && event.gamma !== null) {
+          // For landscape mode adjustments
+          heading = event.alpha;
+        }
+        
         setUserHeading(heading);
       }
     };
@@ -243,10 +259,13 @@ export default function GraveLocatorPage() {
     }
   };
 
-  const performSearch = async (query: string) => {
+  const performSearch = async (query: string, page: number = 1) => {
     if (!query.trim()) {
       setSearchResults([]);
       setShowSearchResults(false);
+      setCurrentPage(1);
+      setTotalPages(1);
+      setTotalResults(0);
       return;
     }
 
@@ -255,16 +274,31 @@ export default function GraveLocatorPage() {
 
     try {
       const response = await fetch(
-        `/api/deceased/search?q=${encodeURIComponent(query)}&cemetery_id=${cemeteryId}`
+        `/api/deceased/search?q=${encodeURIComponent(query)}&cemetery_id=${cemeteryId}&page=${page}&pageSize=20`
       );
       const data = await response.json();
       setSearchResults(data.results || []);
+      setAiEnabled(data.aiEnabled || false);
+      
+      // Update pagination state
+      if (data.pagination) {
+        setCurrentPage(data.pagination.page);
+        setTotalPages(data.pagination.totalPages);
+        setTotalResults(data.pagination.totalResults);
+        setHasNextPage(data.pagination.hasNextPage);
+        setHasPrevPage(data.pagination.hasPrevPage);
+      }
     } catch (error) {
       console.error('Error searching deceased:', error);
       setSearchResults([]);
     } finally {
       setIsSearching(false);
     }
+  };
+
+  const handlePageChange = (newPage: number) => {
+    setCurrentPage(newPage);
+    performSearch(searchQuery, newPage);
   };
 
   const handleSearch = async (e: React.FormEvent) => {
@@ -278,9 +312,74 @@ export default function GraveLocatorPage() {
     setShowSearchResults(false);
     setSearchQuery('');
     
+    // Save to search history
+    saveToSearchHistory(result);
+    
     const plot = plots.find(p => p.id === result.plot_id);
     if (plot && plot.latitude && plot.longitude && userLocation) {
       handleGetDirections([plot.latitude, plot.longitude]);
+    }
+  };
+
+  const saveToSearchHistory = (result: any) => {
+    try {
+      const history = JSON.parse(localStorage.getItem('searchHistory') || '[]');
+      const newItem = {
+        id: result.id,
+        name: result.name,
+        cemeteryName: cemetery?.name || 'Unknown Cemetery',
+        searchedAt: new Date().toISOString(),
+      };
+      
+      // Remove duplicate if exists
+      const filtered = history.filter((item: any) => item.id !== result.id);
+      
+      // Add to beginning and limit to 50 items
+      const updated = [newItem, ...filtered].slice(0, 50);
+      localStorage.setItem('searchHistory', JSON.stringify(updated));
+    } catch (error) {
+      console.error('Error saving search history:', error);
+    }
+  };
+
+  const toggleBookmark = () => {
+    if (!selectedResult) return;
+    
+    try {
+      const bookmarks = JSON.parse(localStorage.getItem('bookmarks') || '[]');
+      const isBookmarked = bookmarks.some((item: any) => item.id === selectedResult.id);
+      
+      if (isBookmarked) {
+        // Remove bookmark
+        const updated = bookmarks.filter((item: any) => item.id !== selectedResult.id);
+        localStorage.setItem('bookmarks', JSON.stringify(updated));
+      } else {
+        // Add bookmark
+        const newBookmark = {
+          id: selectedResult.id,
+          name: selectedResult.name,
+          cemeteryId: cemeteryId,
+          cemeteryName: cemetery?.name || 'Unknown Cemetery',
+          addedAt: new Date().toISOString(),
+        };
+        const updated = [newBookmark, ...bookmarks];
+        localStorage.setItem('bookmarks', JSON.stringify(updated));
+      }
+      
+      // Force re-render by updating selected result
+      setSelectedResult({ ...selectedResult });
+    } catch (error) {
+      console.error('Error toggling bookmark:', error);
+    }
+  };
+
+  const isBookmarked = () => {
+    if (!selectedResult) return false;
+    try {
+      const bookmarks = JSON.parse(localStorage.getItem('bookmarks') || '[]');
+      return bookmarks.some((item: any) => item.id === selectedResult.id);
+    } catch {
+      return false;
     }
   };
 
@@ -574,10 +673,132 @@ export default function GraveLocatorPage() {
           </div>
         )}
 
-        {/* Search Bar */}
+        {/* Search Bar - AI Enhanced */}
         <div className="mb-3 sm:mb-4 relative z-40">
           <form onSubmit={handleSearch} className="relative">
+            {/* AI Badge, Language Toggle & Tips */}
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                {aiEnabled && (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-gradient-to-r from-purple-500 to-blue-500 text-white text-xs font-semibold rounded-full shadow-sm">
+                    <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
+                      <path d="M13 7H7v6h6V7z"/>
+                      <path fillRule="evenodd" d="M7 2a1 1 0 012 0v1h2V2a1 1 0 112 0v1h2a2 2 0 012 2v2h1a1 1 0 110 2h-1v2h1a1 1 0 110 2h-1v2a2 2 0 01-2 2h-2v1a1 1 0 11-2 0v-1H9v1a1 1 0 11-2 0v-1H5a2 2 0 01-2-2v-2H2a1 1 0 110-2h1V9H2a1 1 0 010-2h1V5a2 2 0 012-2h2V2zM5 5h10v10H5V5z" clipRule="evenodd"/>
+                    </svg>
+                    AI Search / AI Paghahanap
+                  </span>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowSearchTips(!showSearchTips)}
+                className="text-xs text-gray-600 hover:text-green-600 font-medium flex items-center gap-1 touch-manipulation"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Search Tips / Mga Tip sa Paghahanap
+              </button>
+            </div>
+
+            {/* Search Tips Panel */}
+            {showSearchTips && (
+              <div className="mb-3 bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-200 rounded-lg sm:rounded-xl p-4 sm:p-5 shadow-lg">
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="font-bold text-blue-900 text-sm sm:text-base flex items-center gap-2">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    Enhanced Search Tips / Mga Tip sa Paghahanap
+                  </h4>
+                  <button
+                    onClick={() => setShowSearchTips(false)}
+                    className="text-gray-500 hover:text-gray-700 p-1 touch-manipulation"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+                
+                <div className="space-y-4 text-xs sm:text-sm">
+                  {/* Name Search */}
+                  <div className="bg-white rounded-lg p-3 border border-blue-200">
+                    <h5 className="font-semibold text-gray-800 mb-2 flex items-center gap-1">
+                      <svg className="w-4 h-4 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
+                      </svg>
+                      Search by Name / Pangalan
+                    </h5>
+                    <ul className="space-y-1 text-gray-700 ml-5">
+                      <li>• "Juan dela Cruz" or "John Smith"</li>
+                      <li>• "Find Maria Santos" or "Hanap si Pedro"</li>
+                      <li>• "G. Juan Reyes" or "Mrs. Mary Johnson"</li>
+                    </ul>
+                  </div>
+
+                  {/* Date & Time Search */}
+                  <div className="bg-white rounded-lg p-3 border border-blue-200">
+                    <h5 className="font-semibold text-gray-800 mb-2 flex items-center gap-1">
+                      <svg className="w-4 h-4 text-purple-600" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd" />
+                      </svg>
+                      Search by Date & Time / Petsa at Panahon
+                    </h5>
+                    <ul className="space-y-1 text-gray-700 ml-5">
+                      <li>• <span className="font-medium">Year:</span> "2020", "died 2015", "namatay 2019"</li>
+                      <li>• <span className="font-medium">Year Range:</span> "2020-2026", "1990 to 2000", "between 2010 and 2020"</li>
+                      <li>• <span className="font-medium">Month:</span> "January", "December 2020", "died in March"</li>
+                      <li>• <span className="font-medium">Month Range:</span> "January-March", "January to March 2020"</li>
+                      <li>• <span className="font-medium">Filipino:</span> "Enero 2020", "mula 2015 hanggang 2020"</li>
+                      <li>• <span className="font-medium">Specific Date:</span> "2020-01-15", "15 January 2020", "01/15/2020"</li>
+                    </ul>
+                  </div>
+
+                  {/* Combined Search */}
+                  <div className="bg-white rounded-lg p-3 border border-blue-200">
+                    <h5 className="font-semibold text-gray-800 mb-2 flex items-center gap-1">
+                      <svg className="w-4 h-4 text-orange-600" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z" />
+                        <path fillRule="evenodd" d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm3 4a1 1 0 000 2h.01a1 1 0 100-2H7zm3 0a1 1 0 000 2h3a1 1 0 100-2h-3zm-3 4a1 1 0 100 2h.01a1 1 0 100-2H7zm3 0a1 1 0 100 2h3a1 1 0 100-2h-3z" clipRule="evenodd" />
+                      </svg>
+                      Combined Search / Pinagsama
+                    </h5>
+                    <ul className="space-y-1 text-gray-700 ml-5">
+                      <li>• "John Smith 2020"</li>
+                      <li>• "Maria Santos January 2015"</li>
+                      <li>• "Find Juan dela Cruz died 2020-2026"</li>
+                      <li>• "Pedro namatay 2019"</li>
+                      <li>• "Mary born 1950 died December 2020"</li>
+                    </ul>
+                  </div>
+
+                  {/* Natural Language */}
+                  <div className="bg-white rounded-lg p-3 border border-blue-200">
+                    <h5 className="font-semibold text-gray-800 mb-2 flex items-center gap-1">
+                      <svg className="w-4 h-4 text-indigo-600" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7zM7 9H5v2h2V9zm8 0h-2v2h2V9zM9 9h2v2H9V9z" clipRule="evenodd" />
+                      </svg>
+                      Natural Language / Natural na Wika
+                    </h5>
+                    <ul className="space-y-1 text-gray-700 ml-5">
+                      <li>• "Show me people who died in 2020"</li>
+                      <li>• "Find graves from January to March 2020"</li>
+                      <li>• "Hanap ang mga yumao noong Enero 2020"</li>
+                      <li>• "Where is Juan who died between 2015 and 2020?"</li>
+                      <li>• "Nasaan si Maria na namatay 2019?"</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="relative">
+              <div className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+              </div>
               <input
                 type="text"
                 value={searchQuery}
@@ -587,13 +808,16 @@ export default function GraveLocatorPage() {
                     setShowSearchResults(true);
                   }
                 }}
-                placeholder="Search by name (e.g., John Doe)"
-                className="w-full px-4 py-3 sm:py-3.5 pr-12 border-2 border-gray-300 rounded-lg sm:rounded-xl focus:outline-none focus:border-blue-500 text-sm sm:text-base text-gray-900 placeholder:text-gray-500 bg-white touch-manipulation"
+                placeholder={aiEnabled 
+                  ? "Try: name, date, month, or range (e.g., 'John 2020', 'January', '2020-2026')" 
+                  : "Search by name, date, month, or year range"}
+                className="w-full pl-12 pr-12 py-3 sm:py-3.5 border-2 border-gray-300 rounded-lg sm:rounded-xl focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-200 text-sm sm:text-base text-gray-900 placeholder:text-gray-500 bg-white touch-manipulation transition-all"
                 autoComplete="off"
+                aria-label="Search for graves using natural language"
               />
               {isSearching && (
                 <div className="absolute right-14 top-1/2 -translate-y-1/2">
-                  <svg className="animate-spin h-5 w-5 text-blue-600" fill="none" viewBox="0 0 24 24">
+                  <svg className="animate-spin h-5 w-5 text-green-600" fill="none" viewBox="0 0 24 24">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                   </svg>
@@ -619,45 +843,125 @@ export default function GraveLocatorPage() {
 
             {/* Search Results */}
             {showSearchResults && searchResults.length > 0 && (
-              <div className="absolute top-full left-0 right-0 mt-2 bg-white border-2 border-gray-300 rounded-lg sm:rounded-xl shadow-xl max-h-[60vh] sm:max-h-96 overflow-y-auto z-[100]">
-                {searchResults.map((result, index) => (
-                  <button
-                    key={`${result.id}-${index}`}
-                    onClick={() => handleSelectSearchResult(result)}
-                    className="w-full p-3 sm:p-4 text-left hover:bg-blue-50 active:bg-blue-100 border-b border-gray-200 last:border-b-0 transition-colors touch-manipulation"
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex-1 min-w-0">
-                        <div className="font-bold text-gray-900 text-base sm:text-lg truncate">
-                          {result.first_name} {result.last_name}
-                        </div>
-                        <div className="text-xs sm:text-sm text-gray-600 mt-1 space-y-1">
-                          <div className="truncate">
-                            <span className="font-semibold">Born:</span> {new Date(result.date_of_birth).toLocaleDateString()} | 
-                            <span className="font-semibold ml-1">Died:</span> {new Date(result.date_of_death).toLocaleDateString()}
-                          </div>
-                          <div className="truncate">
-                            <span className="font-semibold">Plot:</span> {result.plot_number} | 
-                            <span className="font-semibold ml-1">Layer:</span> {result.layer || 1}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="ml-2 text-blue-600 font-medium text-xs sm:text-sm whitespace-nowrap flex-shrink-0">
-                        View →
-                      </div>
+              <div className="absolute top-full left-0 right-0 mt-2 bg-white border-2 border-gray-300 rounded-lg sm:rounded-xl shadow-xl max-h-[70vh] overflow-hidden z-[100] flex flex-col">
+                {/* Results header with count */}
+                <div className="px-4 py-2 bg-green-50 border-b-2 border-green-200 flex-shrink-0">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm font-semibold text-green-900">
+                      {totalResults > 0 ? (
+                        <>
+                          Showing {((currentPage - 1) * 20) + 1}-{Math.min(currentPage * 20, totalResults)} of {totalResults} results
+                        </>
+                      ) : (
+                        `${searchResults.length} results found`
+                      )}
                     </div>
-                  </button>
-                ))}
+                    {aiEnabled && (
+                      <span className="text-xs text-green-600 flex items-center gap-1">
+                        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                          <path d="M10 2a8 8 0 100 16 8 8 0 000-16zM9 9a1 1 0 112 0 1 1 0 01-2 0zm1-5a1 1 0 00-1 1v1a1 1 0 002 0V5a1 1 0 00-1-1z"/>
+                        </svg>
+                        AI Powered
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Scrollable results */}
+                <div className="overflow-y-auto flex-1">
+                  {searchResults.map((result, index) => (
+                    <button
+                      key={`result-${result.deceased_id}-${index}`}
+                      onClick={() => handleSelectSearchResult(result)}
+                      className="w-full p-3 sm:p-4 text-left hover:bg-green-50 active:bg-green-100 border-b border-gray-200 last:border-b-0 transition-colors touch-manipulation"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <div className="font-bold text-gray-900 text-base sm:text-lg truncate">
+                              {result.first_name} {result.last_name}
+                            </div>
+                            {aiEnabled && index === 0 && result.score > 0.7 && (
+                              <span className="inline-flex items-center px-1.5 py-0.5 bg-green-100 text-green-700 text-xs font-semibold rounded">
+                                Best Match
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-xs sm:text-sm text-gray-600 mt-1 space-y-1">
+                            <div className="truncate">
+                              <span className="font-semibold">Born:</span> {new Date(result.date_of_birth).toLocaleDateString()} | 
+                              <span className="font-semibold ml-1">Died:</span> {new Date(result.date_of_death).toLocaleDateString()}
+                            </div>
+                            <div className="truncate">
+                              <span className="font-semibold">Plot:</span> {result.plot_number} | 
+                              <span className="font-semibold ml-1">Layer:</span> {result.layer || 1}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="ml-2 text-green-600 font-medium text-xs sm:text-sm whitespace-nowrap flex-shrink-0">
+                          View →
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+
+                {/* Pagination Controls */}
+                {totalPages > 1 && (
+                  <div className="px-4 py-3 bg-gray-50 border-t-2 border-gray-200 flex items-center justify-between flex-shrink-0">
+                    <button
+                      onClick={() => handlePageChange(currentPage - 1)}
+                      disabled={!hasPrevPage}
+                      className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors touch-manipulation ${
+                        hasPrevPage
+                          ? 'bg-green-600 text-white hover:bg-green-700 active:bg-green-800'
+                          : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                      }`}
+                    >
+                      ← Previous
+                    </button>
+                    
+                    <div className="text-sm text-gray-600 font-medium">
+                      Page {currentPage} of {totalPages}
+                    </div>
+                    
+                    <button
+                      onClick={() => handlePageChange(currentPage + 1)}
+                      disabled={!hasNextPage}
+                      className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors touch-manipulation ${
+                        hasNextPage
+                          ? 'bg-green-600 text-white hover:bg-green-700 active:bg-green-800'
+                          : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                      }`}
+                    >
+                      Next →
+                    </button>
+                  </div>
+                )}
               </div>
             )}
 
             {showSearchResults && searchResults.length === 0 && !isSearching && (
               <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-300 rounded-lg sm:rounded-xl shadow-xl p-4 sm:p-6 z-[100]">
                 <div className="text-center">
-                  <p className="text-gray-700 font-medium text-sm sm:text-base">No results found</p>
+                  <svg className="w-12 h-12 mx-auto text-gray-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <p className="text-gray-700 font-medium text-sm sm:text-base">No results found / Walang resulta</p>
                   <p className="text-gray-500 text-xs sm:text-sm mt-1">
-                    No deceased persons found matching &quot;{searchQuery}&quot;
+                    No deceased persons found matching / Walang natagpuang yumaong tao na tumutugma sa &quot;{searchQuery}&quot;
                   </p>
+                  <div className="mt-4 text-left bg-gray-50 rounded-lg p-3 text-xs text-gray-600">
+                    <p className="font-semibold mb-2">Search tips / Mga tip sa paghahanap:</p>
+                    <ul className="space-y-1 list-disc list-inside">
+                      <li>Try full names: "John Smith" / Buong pangalan: "Juan dela Cruz"</li>
+                      <li>Use dates/years: "2020", "January 2020", "2020-2026"</li>
+                      <li>By month: "January", "December 2020", "January-March"</li>
+                      <li>Filipino: "Enero 2020", "mula 2020 hanggang 2026"</li>
+                      <li>Natural language: "Find Mary died 2020" / "Hanap si Maria namatay 2020"</li>
+                      <li>Check spelling / Suriin ang spelling</li>
+                    </ul>
+                  </div>
                 </div>
               </div>
             )}
@@ -683,12 +987,23 @@ export default function GraveLocatorPage() {
                   </div>
                 </div>
               </div>
-              <button
-                onClick={clearRoute}
-                className="text-green-600 hover:text-green-800 active:text-green-900 font-medium text-xs sm:text-sm px-2 py-1 touch-manipulation flex-shrink-0"
-              >
-                Clear ✕
-              </button>
+              <div className="flex gap-2 flex-shrink-0">
+                <button
+                  onClick={toggleBookmark}
+                  className="text-green-600 hover:text-green-800 active:text-green-900 p-2 touch-manipulation"
+                  title={isBookmarked() ? "Remove bookmark" : "Add bookmark"}
+                >
+                  <svg className="w-5 h-5 sm:w-6 sm:h-6" fill={isBookmarked() ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                  </svg>
+                </button>
+                <button
+                  onClick={clearRoute}
+                  className="text-green-600 hover:text-green-800 active:text-green-900 font-medium text-xs sm:text-sm px-2 py-1 touch-manipulation"
+                >
+                  Clear ✕
+                </button>
+              </div>
             </div>
 
             {/* Travel Mode Selector */}

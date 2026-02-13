@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useRef } from 'react';
-import { MapContainer, TileLayer, Marker, Polyline, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Polyline, Polygon, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -15,6 +15,9 @@ L.Icon.Default.mergeOptions({
 
 // Create custom directional marker icon
 const createDirectionalIcon = (heading: number | null) => {
+  // Adjust heading so 0 degrees points up (North) and rotates clockwise
+  const rotation = heading !== null ? heading : 0;
+  
   const svg = `
     <svg width="40" height="40" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
       <defs>
@@ -30,11 +33,13 @@ const createDirectionalIcon = (heading: number | null) => {
           </feMerge>
         </filter>
       </defs>
-      <g transform="translate(20, 20) rotate(${heading || 0})">
+      <g transform="translate(20, 20)">
         <!-- Outer circle with border -->
-        <circle cx="0" cy="0" r="14" fill="#3b82f6" stroke="white" stroke-width="3" filter="url(#shadow)"/>
-        <!-- Direction arrow -->
-        <path d="M 0,-10 L -5,5 L 0,2 L 5,5 Z" fill="white"/>
+        <circle cx="0" cy="0" r="14" fill="#10b981" stroke="white" stroke-width="3" filter="url(#shadow)"/>
+        <!-- Direction arrow rotated by heading -->
+        <g transform="rotate(${rotation})">
+          <path d="M 0,-10 L -5,5 L 0,2 L 5,5 Z" fill="white"/>
+        </g>
       </g>
     </svg>
   `;
@@ -176,7 +181,6 @@ export default function GraveLocatorMap({
 }: GraveLocatorMapProps) {
   const [isMounted, setIsMounted] = useState(false);
   const [map, setMap] = useState<L.Map | null>(null);
-  const highlightMarkerRef = useRef<L.Marker | null>(null);
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isLocationLocked, setIsLocationLocked] = useState(false);
@@ -217,87 +221,12 @@ export default function GraveLocatorMap({
     }
   }, [userLocation, isLocationLocked, map]);
 
-  // Handle highlighting marker
-  useEffect(() => {
-    if (!map || !highlightedPlotId) {
-      if (highlightMarkerRef.current) {
-        map?.removeLayer(highlightMarkerRef.current);
-        highlightMarkerRef.current = null;
-      }
-      return;
-    }
-
-    const highlightedPlot = plots.find(p => p.id === highlightedPlotId);
-    if (!highlightedPlot) return;
-
-    const coords = highlightedPlot.map_coordinates;
-    if (!coords || !Array.isArray(coords) || coords.length === 0) return;
-
-    // Calculate center of the plot
-    const latSum = coords.reduce((sum: number, coord: [number, number]) => sum + coord[0], 0);
-    const lngSum = coords.reduce((sum: number, coord: [number, number]) => sum + coord[1], 0);
-    const centerLat = latSum / coords.length;
-    const centerLng = lngSum / coords.length;
-
-    // Create a pulsing marker at the plot center
-    const pulsingIcon = L.divIcon({
-      className: 'highlight-marker',
-      html: `
-        <div style="
-          position: relative;
-          width: 40px;
-          height: 40px;
-        ">
-          <div style="
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            width: 20px;
-            height: 20px;
-            background-color: #ef4444;
-            border: 3px solid white;
-            border-radius: 50%;
-            box-shadow: 0 0 10px rgba(239, 68, 68, 0.8);
-            animation: pulse 2s infinite;
-          "></div>
-          <style>
-            @keyframes pulse {
-              0% {
-                box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
-              }
-              70% {
-                box-shadow: 0 0 0 20px rgba(239, 68, 68, 0);
-              }
-              100% {
-                box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
-              }
-            }
-          </style>
-        </div>
-      `,
-      iconSize: [40, 40],
-      iconAnchor: [20, 20]
-    });
-
-    // Remove old marker if it exists
-    if (highlightMarkerRef.current) {
-      map.removeLayer(highlightMarkerRef.current);
-    }
-
-    // Add new marker
-    highlightMarkerRef.current = L.marker([centerLat, centerLng], { 
-      icon: pulsingIcon,
-      zIndexOffset: 1000 
-    }).addTo(map);
-  }, [map, highlightedPlotId, plots]);
-
   const getPlotColor = (status: string) => {
     switch (status) {
       case 'available':
         return '#10b981'; // green
       case 'occupied':
-        return '#3b82f6'; // blue
+        return '#10b981'; // green
       case 'reserved':
         return '#f59e0b'; // yellow
       default:
@@ -445,7 +374,7 @@ export default function GraveLocatorMap({
                         <Polyline
                           positions={behind}
                           pathOptions={{
-                            color: '#3b82f6',
+                            color: '#10b981',
                             weight: 8,
                             opacity: 0.9,
                           }}
@@ -478,7 +407,7 @@ export default function GraveLocatorMap({
                     <Polyline
                       positions={ahead}
                       pathOptions={{
-                        color: '#3b82f6',
+                        color: '#10b981',
                         weight: 8,
                         opacity: 0.9,
                       }}
@@ -495,12 +424,34 @@ export default function GraveLocatorMap({
           <Polyline
             positions={route}
             pathOptions={{
-              color: '#3b82f6',
+              color: '#10b981',
               weight: 6,
               opacity: 0.8,
             }}
           />
         )}
+
+        {/* Highlighted Plot Polygon */}
+        {highlightedPlotId && (() => {
+          const highlightedPlot = plots.find(p => p.id === highlightedPlotId);
+          if (!highlightedPlot) return null;
+
+          const coords = highlightedPlot.map_coordinates;
+          if (!coords || !Array.isArray(coords) || coords.length === 0) return null;
+
+          return (
+            <Polygon
+              positions={coords}
+              pathOptions={{
+                color: '#ef4444',
+                fillColor: '#ef4444',
+                fillOpacity: 0.4,
+                weight: 3,
+                opacity: 1,
+              }}
+            />
+          );
+        })()}
       </MapContainer>
 
 
@@ -523,31 +474,19 @@ export default function GraveLocatorMap({
           )}
         </button>
 
-        {/* Center to User Location Button */}
+        {/* Location Button - Center and Lock */}
         {userLocation && (
           <button
             onClick={() => {
-              if (map && userLocation) {
-                map.flyTo(userLocation, 19, { duration: 1 });
-              }
-            }}
-            className="bg-white hover:bg-gray-100 active:bg-gray-200 text-gray-700 p-2.5 sm:p-2 rounded-lg sm:rounded-xl shadow-lg transition-colors touch-manipulation"
-            title="Center to my location"
-          >
-            <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-            </svg>
-          </button>
-        )}
-
-        {/* Lock to Location Button */}
-        {userLocation && (
-          <button
-            onClick={() => {
-              setIsLocationLocked(!isLocationLocked);
-              if (!isLocationLocked && map && userLocation) {
-                map.flyTo(userLocation, 19, { duration: 1 });
+              if (!isLocationLocked) {
+                // First tap: center to location and lock
+                setIsLocationLocked(true);
+                if (map && userLocation) {
+                  map.flyTo(userLocation, 19, { duration: 1 });
+                }
+              } else {
+                // Second tap: unlock
+                setIsLocationLocked(false);
               }
             }}
             className={`p-2.5 sm:p-2 rounded-lg sm:rounded-xl shadow-lg transition-all touch-manipulation ${
@@ -555,7 +494,7 @@ export default function GraveLocatorMap({
                 ? 'bg-blue-600 text-white hover:bg-blue-700 active:bg-blue-800' 
                 : 'bg-white text-gray-700 hover:bg-gray-100 active:bg-gray-200'
             }`}
-            title={isLocationLocked ? "Location locked - tap to unlock" : "Lock to my location"}
+            title={isLocationLocked ? "Tap to unlock location" : "Tap to center and lock to location"}
           >
             {isLocationLocked ? (
               <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="currentColor" viewBox="0 0 24 24">
@@ -597,7 +536,7 @@ export default function GraveLocatorMap({
       {highlightedPlotId && !isFullscreen && (
         <div className="absolute bottom-2 right-2 sm:bottom-4 sm:right-4 bg-white rounded-lg sm:rounded-xl shadow-lg p-2 sm:p-3 z-[1000]">
           <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-red-500 animate-pulse flex-shrink-0"></div>
+            <div className="w-4 h-3 border-2 border-red-500 bg-red-500/40 flex-shrink-0"></div>
             <span className="text-xs sm:text-sm font-semibold text-gray-900 whitespace-nowrap">Located Grave</span>
           </div>
         </div>

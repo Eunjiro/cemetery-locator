@@ -56,7 +56,7 @@ export default function HomePage() {
             <p className="text-gray-500">No cemeteries available at this time.</p>
           </div>
         ) : (
-          <div className="rounded-xl p-4 sm:p-6 shadow-md" style={{ background: 'linear-gradient(to right, rgb(37, 99, 235), rgb(29, 78, 216))' }}>
+          <div className="rounded-xl p-4 sm:p-6 shadow-md" style={{ background: 'linear-gradient(to right, rgb(22, 163, 74), rgb(21, 128, 61))' }}>
             <h2 className="text-xl sm:text-2xl font-bold text-white mb-4 sm:mb-6">Available Cemeteries</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
             {cemeteries.map((cemetery) => (
@@ -80,7 +80,7 @@ export default function HomePage() {
                       {cemetery.description}
                     </p>
                   )}
-                  <button className="mt-4 w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 active:scale-[0.98] text-white px-4 py-3.5 rounded-xl font-bold text-base transition-all touch-manipulation shadow-lg">
+                  <button className="mt-4 w-full bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 active:scale-[0.98] text-white px-4 py-3.5 rounded-xl font-bold text-base transition-all touch-manipulation shadow-lg">
                     Open Locator →
                   </button>
                 </div>
@@ -95,12 +95,12 @@ export default function HomePage() {
           <div className="grid grid-cols-1 gap-4">
             <div className="bg-white/95 backdrop-blur p-4 rounded-xl shadow-md active:scale-[0.98] transition-transform touch-manipulation">
               <div className="flex items-start gap-3">
-                <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center flex-shrink-0 shadow-lg">
+                <div className="w-10 h-10 bg-green-600 rounded-full flex items-center justify-center flex-shrink-0 shadow-lg">
                   <span className="text-white font-bold text-lg">1</span>
                 </div>
                 <div className="flex-1">
                   <h3 className="font-bold mb-1 text-base text-gray-900 flex items-center gap-2">
-                    <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                     </svg>
                     Search

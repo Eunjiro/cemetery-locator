@@ -1,14 +1,14 @@
-# Cemetery Locator - Public App
+# Grave Locator - Public App
 
 Public-facing cemetery grave locator application with GPS navigation.
 
 ## Features
 
-- í´ Search deceased persons by name
-- í·ºï¸ Interactive cemetery maps
-- í³ Real-time GPS tracking
-- í·­ Turn-by-turn navigation (walking, driving, cycling)
-- í³± Mobile-first responsive design
+- ï¿½ï¿½ï¿½ Search deceased persons by name
+- ï¿½ï¿½ï¿½ï¸ Interactive cemetery maps
+- ï¿½ï¿½ï¿½ Real-time GPS tracking
+- ï¿½ï¿½ï¿½ Turn-by-turn navigation (walking, driving, cycling)
+- ï¿½ï¿½ï¿½ Mobile-first responsive design
 
 ## Setup
 

@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Cemetery Locator - Find Your Loved Ones",
+  title: "Grave Locator - Find Your Loved Ones",
   description: "Search and locate graves across cemeteries with interactive maps and GPS navigation",
   viewport: {
     width: "device-width",
@@ -21,11 +21,11 @@ export const metadata: Metadata = {
     maximumScale: 5,
     userScalable: true,
   },
-  themeColor: "#2563eb",
+  themeColor: "#16a34a",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "Cemetery Locator",
+    title: "Grave Locator",
   },
   manifest: "/manifest.json",
   icons: {
@@ -52,7 +52,7 @@ export default function RootLayout({
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-        <meta name="apple-mobile-web-app-title" content="Cemetery Locator" />
+        <meta name="apple-mobile-web-app-title" content="Grave Locator" />
       </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
