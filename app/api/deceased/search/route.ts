@@ -71,6 +71,9 @@ export async function GET(request: NextRequest) {
         .replace(/\b(19\d{2}|20\d{2})\b/g, '')
         .replace(/\b\d{1,3}\b/g, '')
         .replace(/\b(january|february|march|april|may|june|july|august|september|october|november|december|enero|pebrero|marso|abril|mayo|hunyo|hulyo|agosto|setyembre|oktubre|nobyembre|disyembre)\b/gi, '')
+        .replace(/\b(last year|this year|last month|this month|recently|kamakailan|nakaraang|ngayong|years? ago|taon na ang nakaraan)\b/gi, '')
+        .replace(/\b(Jr\.?|Sr\.?|II|III|IV|Mr\.?|Mrs\.?|Ms\.?|Dr\.?|Engr\.?|Atty\.?|G\.|Gng\.|Bb\.)\b/gi, '')
+        .replace(/\b('?\d{2}s)\b/g, '')
         .replace(/[-\/]/g, ' ')
         .replace(/\s+/g, ' ')
         .trim();
@@ -387,6 +390,7 @@ export async function GET(request: NextRequest) {
         hasPrevPage,
       },
       context, // Return parsed context for debugging
+      interpretation: context.interpretation, // Human-readable search interpretation
       aiEnabled: useAI && !!process.env.XAI_API_KEY,
     });
   } catch (error) {

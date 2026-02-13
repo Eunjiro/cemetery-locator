@@ -47,6 +47,32 @@ const testQueries = [
   "2020",
   "january 2020",
   "john died 2020 around age 50",
+  
+  // ===== NEW: RELATIVE TIME EXPRESSIONS =====
+  "john died last year",
+  "died 5 years ago",
+  "maria died recently",
+  "namatay 3 taon na ang nakaraan",
+  "someone died this year",
+  "born last month",
+  
+  // ===== NEW: DECADE / ERA QUERIES =====
+  "died in the 90s",
+  "born in the 80s",
+  "from the 2000s",
+  "noong dekada nobenta",
+  
+  // ===== NEW: SUFFIX / TITLE HANDLING =====
+  "find john smith jr",
+  "Dr. Maria Santos",
+  "where is pedro dela cruz III",
+  "Mr. Jose Reyes Sr.",
+  
+  // ===== NEW: SPELLING VARIANTS =====
+  "find kris santos",        // should generate chris variant
+  "jhon smith",              // common misspelling of john
+  "looking for felipe reyes", // should generate philip variant
+  "jiro tanaka",             // should generate giro/hiro variants
 ];
 
 console.log('Testing Conversational Natural Language Queries:\n');
@@ -62,6 +88,7 @@ testQueries.forEach((query, index) => {
   const fields: string[] = [];
   if (result.firstName) fields.push(`Name: ${result.firstName}${result.lastName ? ' ' + result.lastName : ''}`);
   if (result.middleName) fields.push(`Middle: ${result.middleName}`);
+  if (result.suffix) fields.push(`Suffix: ${result.suffix}`);
   if (result.ageAtDeath) fields.push(`Age: ${result.ageAtDeath}`);
   if (result.yearOfBirth) fields.push(`Birth: ${result.yearOfBirth}`);
   if (result.yearOfDeath) fields.push(`Death: ${result.yearOfDeath}`);
@@ -70,6 +97,9 @@ testQueries.forEach((query, index) => {
   if (result.relationship) fields.push(`Relation: ${result.relationship}`);
   if (result.intentType) fields.push(`Intent: ${result.intentType}`);
   if (result.isFilipino) fields.push(`Filipino: yes`);
+  if (result.metaphoneFirstName) fields.push(`Metaphone: ${result.metaphoneFirstName}`);
+  if (result.spellingVariants && result.spellingVariants.length > 1) fields.push(`Variants: ${result.spellingVariants.length}`);
+  if (result.interpretation) fields.push(`Interp: ${result.interpretation}`);
   
   if (fields.length > 0) {
     console.log(`   ✓ ${fields.join(' | ')}`);
@@ -83,8 +113,13 @@ testQueries.forEach((query, index) => {
 console.log('\n' + '='.repeat(90));
 console.log(`\n✓ Results: ${passed} parsed successfully, ${warnings} warnings out of ${testQueries.length} total`);
 console.log('\nSupported Conversational Patterns:');
-console.log('  English:  "can you find X", "i\'m looking for X", "where is X", "any record of X"');
-console.log('  Filipino: "hanap si X", "nasaan si X", "sino si X", "libingan ni X"');
-console.log('  Hybrid:   "find si X", "help me hanap X", "pwede mo find X"');
-console.log('  Casual:   "um find jiro about 20 age", "i think jose died 2019"');
-console.log('  Voice:    Microphone button auto-transcribes and searches');
+console.log('  English:    "can you find X", "i\'m looking for X", "where is X", "any record of X"');
+console.log('  Filipino:   "hanap si X", "nasaan si X", "sino si X", "libingan ni X"');
+console.log('  Hybrid:     "find si X", "help me hanap X", "pwede mo find X"');
+console.log('  Casual:     "um find jiro about 20 age", "i think jose died 2019"');
+console.log('  Voice:      Microphone button with EN/FIL language toggle');
+console.log('  Relative:   "died last year", "born 5 years ago", "recently", "kamakailan"');
+console.log('  Decades:    "born in the 90s", "from the 2000s", "noong dekada nobenta"');
+console.log('  Suffixes:   "John Jr.", "Pedro III", "Dr. Maria"');
+console.log('  Spelling:   "Kris/Chris", "Jhon/John", "Jiro/Giro/Hiro"');
+console.log('  Metaphone:  Double Metaphone phonetic matching for Filipino names');

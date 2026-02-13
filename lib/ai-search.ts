@@ -113,6 +113,11 @@ function isLikelyName(word: string): boolean {
     'pwede', 'maaari', 'gusto', 'nais', 'kailangan', 'lang', 'naman',
     'kasi', 'kung', 'kapag', 'pag', 'para', 'dahil',
     'si', 'ni', 'kay', 'sa', 'na', 'ng', 'ba', 'po', 'mga', 'ko', 'mo',
+    // Time-related keywords
+    'ago', 'last', 'this', 'recently', 'long', 'month', 'today', 'yesterday',
+    'kamakailan', 'nakaraang', 'ngayong', 'dekada', 'decade',
+    // Titles & suffixes
+    'mr', 'mrs', 'ms', 'dr', 'engr', 'atty', 'jr', 'sr', 'prof',
   ];
   return !nonNameWords.includes(word.toLowerCase()) && word.length > 1;
 }
@@ -140,6 +145,368 @@ function expandNicknames(name: string): string[] {
   
   // Remove duplicates and return
   return [...new Set(variations)];
+}
+
+/**
+ * Double Metaphone algorithm - better phonetic matching than Soundex
+ * Handles Filipino/English name variations like Kris/Chris, Jiro/Giro, Katrina/Catrina
+ */
+function doubleMetaphone(word: string): [string, string] {
+  if (!word || word.length === 0) return ['', ''];
+  
+  const str = word.toUpperCase();
+  let primary = '';
+  let secondary = '';
+  let pos = 0;
+  const len = str.length;
+  
+  const charAt = (i: number) => (i >= 0 && i < len) ? str[i] : '';
+  const isVowel = (c: string) => 'AEIOU'.includes(c);
+  
+  // Skip silent initial letters
+  if (['GN', 'KN', 'PN', 'AE', 'WR'].some(p => str.startsWith(p))) pos = 1;
+  
+  // Initial X sounds like Z
+  if (charAt(0) === 'X') { primary += 'S'; secondary += 'S'; pos = 1; }
+  
+  while (pos < len && (primary.length < 4 || secondary.length < 4)) {
+    const c = charAt(pos);
+    
+    if (isVowel(c)) {
+      if (pos === 0) { primary += 'A'; secondary += 'A'; }
+      pos++;
+      continue;
+    }
+    
+    switch (c) {
+      case 'B':
+        primary += 'P'; secondary += 'P';
+        pos += (charAt(pos + 1) === 'B') ? 2 : 1;
+        break;
+      case 'C':
+        if (['I', 'E', 'Y'].includes(charAt(pos + 1))) {
+          primary += 'S'; secondary += 'S';
+          pos += 2;
+        } else if (charAt(pos + 1) === 'H') {
+          primary += 'X'; secondary += 'X';
+          pos += 2;
+        } else {
+          primary += 'K'; secondary += 'K';
+          pos += (charAt(pos + 1) === 'C' && !['I', 'E'].includes(charAt(pos + 2))) ? 2 : 1;
+        }
+        break;
+      case 'D':
+        if (charAt(pos + 1) === 'G' && ['I', 'E', 'Y'].includes(charAt(pos + 2))) {
+          primary += 'J'; secondary += 'J'; pos += 3;
+        } else {
+          primary += 'T'; secondary += 'T';
+          pos += (charAt(pos + 1) === 'D') ? 2 : 1;
+        }
+        break;
+      case 'F':
+        primary += 'F'; secondary += 'F';
+        pos += (charAt(pos + 1) === 'F') ? 2 : 1;
+        break;
+      case 'G':
+        if (charAt(pos + 1) === 'H') {
+          if (pos > 0 && !isVowel(charAt(pos - 1))) {
+            primary += 'K'; secondary += 'K';
+          } else if (pos === 0) {
+            primary += 'K'; secondary += 'K';
+          }
+          pos += 2;
+        } else if (['I', 'E', 'Y'].includes(charAt(pos + 1))) {
+          primary += 'J'; secondary += 'K'; // G before I/E/Y: J or K
+          pos += 2;
+        } else {
+          primary += 'K'; secondary += 'K';
+          pos += (charAt(pos + 1) === 'G') ? 2 : 1;
+        }
+        break;
+      case 'H':
+        if (isVowel(charAt(pos + 1)) && (pos === 0 || !isVowel(charAt(pos - 1)))) {
+          primary += 'H'; secondary += 'H';
+        }
+        pos++;
+        break;
+      case 'J':
+        primary += 'J'; secondary += 'H'; // J can sound like H in Filipino
+        pos += (charAt(pos + 1) === 'J') ? 2 : 1;
+        break;
+      case 'K':
+        primary += 'K'; secondary += 'K';
+        pos += (charAt(pos + 1) === 'K') ? 2 : 1;
+        break;
+      case 'L':
+        primary += 'L'; secondary += 'L';
+        pos += (charAt(pos + 1) === 'L') ? 2 : 1;
+        break;
+      case 'M':
+        primary += 'M'; secondary += 'M';
+        pos += (charAt(pos + 1) === 'M') ? 2 : 1;
+        break;
+      case 'N':
+        primary += 'N'; secondary += 'N';
+        pos += (charAt(pos + 1) === 'N') ? 2 : 1;
+        break;
+      case 'P':
+        if (charAt(pos + 1) === 'H') {
+          primary += 'F'; secondary += 'F'; pos += 2;
+        } else {
+          primary += 'P'; secondary += 'P';
+          pos += (charAt(pos + 1) === 'P') ? 2 : 1;
+        }
+        break;
+      case 'Q':
+        primary += 'K'; secondary += 'K';
+        pos += (charAt(pos + 1) === 'Q') ? 2 : 1;
+        break;
+      case 'R':
+        primary += 'R'; secondary += 'R';
+        pos += (charAt(pos + 1) === 'R') ? 2 : 1;
+        break;
+      case 'S':
+        if (charAt(pos + 1) === 'H') {
+          primary += 'X'; secondary += 'X'; pos += 2;
+        } else if (charAt(pos + 1) === 'C' && ['I', 'E'].includes(charAt(pos + 2))) {
+          primary += 'S'; secondary += 'S'; pos += 3;
+        } else {
+          primary += 'S'; secondary += 'S';
+          pos += (charAt(pos + 1) === 'S') ? 2 : 1;
+        }
+        break;
+      case 'T':
+        if (charAt(pos + 1) === 'H') {
+          primary += '0'; secondary += 'T'; pos += 2;
+        } else if (charAt(pos + 1) === 'I' && ['O', 'A'].includes(charAt(pos + 2))) {
+          primary += 'X'; secondary += 'X'; pos += 3;
+        } else {
+          primary += 'T'; secondary += 'T';
+          pos += (charAt(pos + 1) === 'T') ? 2 : 1;
+        }
+        break;
+      case 'V':
+        primary += 'F'; secondary += 'F';
+        pos += (charAt(pos + 1) === 'V') ? 2 : 1;
+        break;
+      case 'W':
+      case 'Y':
+        if (isVowel(charAt(pos + 1))) {
+          primary += c; secondary += c;
+        }
+        pos++;
+        break;
+      case 'X':
+        primary += 'KS'; secondary += 'KS'; pos++;
+        break;
+      case 'Z':
+        primary += 'S'; secondary += 'S';
+        pos += (charAt(pos + 1) === 'Z') ? 2 : 1;
+        break;
+      default:
+        pos++;
+    }
+  }
+  
+  return [primary.slice(0, 4), secondary.slice(0, 4)];
+}
+
+/**
+ * Common Filipino/English spelling variant pairs
+ * Maps variant spellings to canonical forms and alternatives
+ */
+const spellingVariantsMap: Record<string, string[]> = {
+  // C/K interchangeable in Filipino
+  'kris': ['chris', 'cris', 'kris'],
+  'chris': ['kris', 'cris', 'chris'],
+  'cris': ['kris', 'chris', 'cris'],
+  'katrina': ['catrina', 'katrina'],
+  'catrina': ['katrina', 'catrina'],
+  'carlo': ['karlo', 'carlo'],
+  'karlo': ['carlo', 'karlo'],
+  'kristina': ['christina', 'cristina', 'kristina'],
+  'christina': ['kristina', 'cristina', 'christina'],
+  'cristina': ['kristina', 'christina', 'cristina'],
+  'karla': ['carla', 'karla'],
+  'carla': ['karla', 'carla'],
+  'kristine': ['christine', 'cristine', 'kristine'],
+  'christine': ['kristine', 'cristine', 'christine'],
+  
+  // J/G/H interchangeable
+  'jiro': ['giro', 'hiro', 'jiro'],
+  'giro': ['jiro', 'hiro', 'giro'],
+  'hiro': ['jiro', 'giro', 'hiro'],
+  'jose': ['hoze', 'jose'],
+  'jesus': ['hesus', 'jesus'],
+  'hesus': ['jesus', 'hesus'],
+  'jaime': ['haime', 'jaime'],
+  'jorge': ['horhe', 'jorge'],
+  'horhe': ['jorge', 'horhe'],
+  'juana': ['huana', 'juana'],
+  'juan': ['huan', 'juan'],
+  
+  // PH/F interchangeable
+  'philip': ['felipe', 'phillip', 'filip', 'philip'],
+  'felipe': ['philip', 'phillip', 'filip', 'felipe'],
+  'rafael': ['raphael', 'rafael'],
+  'raphael': ['rafael', 'raphael'],
+  
+  // Common English misspellings
+  'john': ['jhon', 'jon', 'john'],
+  'jhon': ['john', 'jon', 'jhon'],
+  'michael': ['micheal', 'mikael', 'michael'],
+  'micheal': ['michael', 'mikael', 'micheal'],
+  'james': ['jaymes', 'james'],
+  'steven': ['stephen', 'stefan', 'steven'],
+  'stephen': ['steven', 'stefan', 'stephen'],
+  'bryan': ['brian', 'bryan'],
+  'brian': ['bryan', 'brian'],
+  'allan': ['alan', 'allen', 'allan'],
+  'alan': ['allan', 'allen', 'alan'],
+  'allen': ['alan', 'allan', 'allen'],
+  'jeffrey': ['geoffrey', 'jeffry', 'jeffrey'],
+  'geoffrey': ['jeffrey', 'jeffry', 'geoffrey'],
+  'catherine': ['katherine', 'kathryn', 'catherine'],
+  'katherine': ['catherine', 'kathryn', 'katherine'],
+  'kathryn': ['katherine', 'catherine', 'kathryn'],
+  'ann': ['anne', 'ana', 'ann'],
+  'anne': ['ann', 'ana', 'anne'],
+  'ana': ['ann', 'anne', 'ana'],
+  
+  // Filipino names with multiple spellings
+  'rodolfo': ['rudolfo', 'rodolfo'],
+  'edgardo': ['edgar', 'edgardo'],
+  'reynaldo': ['reinaldo', 'renaldo', 'reynaldo'],
+  'ernesto': ['arnesto', 'ernesto'],
+  'rosario': ['rosaryo', 'rosario'],
+  'concepcion': ['konsepsyon', 'concepcion'],
+  'mercedes': ['mersedes', 'mercedes'],
+  'angelica': ['anhelika', 'angelika', 'angelica'],
+  'angelika': ['angelica', 'anhelika', 'angelika'],
+};
+
+/**
+ * Get spelling variants for a given name
+ */
+function getSpellingVariants(name: string): string[] {
+  const lower = name.toLowerCase();
+  const variants = new Set<string>([lower]);
+  
+  // Check direct variant map
+  if (spellingVariantsMap[lower]) {
+    spellingVariantsMap[lower].forEach(v => variants.add(v));
+  }
+  
+  // Generate common typo patterns
+  // 1. Letter transposition (e.g., "jhon" → "john")
+  for (let i = 0; i < lower.length - 1; i++) {
+    const transposed = lower.slice(0, i) + lower[i + 1] + lower[i] + lower.slice(i + 2);
+    if (transposed !== lower) variants.add(transposed);
+  }
+  
+  // 2. Missing vowel recovery (common in voice/fast typing)
+  const vowels = 'aeiou';
+  for (let i = 0; i < lower.length; i++) {
+    if (!vowels.includes(lower[i])) {
+      for (const v of vowels) {
+        // Insert vowel before consonant
+        const withVowel = lower.slice(0, i) + v + lower.slice(i);
+        if (withVowel.length <= lower.length + 1) variants.add(withVowel);
+      }
+    }
+  }
+  
+  // 3. C/K substitution (very common in Filipino)
+  if (lower.includes('c')) variants.add(lower.replace(/c/g, 'k'));
+  if (lower.includes('k')) variants.add(lower.replace(/k/g, 'c'));
+  
+  // 4. PH/F substitution
+  if (lower.includes('ph')) variants.add(lower.replace(/ph/g, 'f'));
+  if (lower.includes('f')) variants.add(lower.replace(/f/g, 'ph'));
+  
+  // 5. Double consonant removal/addition
+  const doubled = lower.replace(/([bcdfghjklmnpqrstvwxyz])\1/g, '$1');
+  if (doubled !== lower) variants.add(doubled);
+  
+  return [...variants].slice(0, 10); // Limit to prevent too many variants
+}
+
+/**
+ * Strip and extract name suffixes (Jr., Sr., III, etc.)
+ */
+function extractSuffix(name: string): { cleanName: string; suffix: string | undefined } {
+  const suffixPattern = /\s*(?:,\s*)?\b(Jr\.?|Sr\.?|II|III|IV|V|VI|VII|VIII|2nd|3rd|4th)\s*$/i;
+  const match = name.match(suffixPattern);
+  if (match) {
+    return {
+      cleanName: name.replace(suffixPattern, '').trim(),
+      suffix: match[1].replace(/\.$/, '').toUpperCase(),
+    };
+  }
+  return { cleanName: name, suffix: undefined };
+}
+
+/**
+ * Strip honorific titles from names
+ */
+function stripTitles(name: string): string {
+  return name
+    .replace(/^(?:Mr\.?|Mrs\.?|Ms\.?|Miss\.?|Dr\.?|Engr\.?|Atty\.?|Prof\.?|Hon\.?|Rev\.?|Fr\.?|Sr\.?|Br\.?|G\.?|Gng\.?|Bb\.?|Ginoo\.?|Ginang\.?|Binibini\.?)\s+/i, '')
+    .trim();
+}
+
+/**
+ * Build a human-readable interpretation of what the parser understood
+ */
+function buildInterpretation(context: SearchContext): string {
+  const parts: string[] = [];
+  
+  if (context.firstName && context.lastName) {
+    parts.push(`Name: "${context.firstName} ${context.lastName}"`);
+  } else if (context.firstName) {
+    parts.push(`Name: "${context.firstName}"`);
+  } else if (context.lastName) {
+    parts.push(`Last name: "${context.lastName}"`);
+  }
+  
+  if (context.suffix) {
+    parts.push(`Suffix: ${context.suffix}`);
+  }
+  
+  if (context.ageAtDeath) {
+    parts.push(`Age: ~${context.ageAtDeath}`);
+  } else if (context.ageRange) {
+    parts.push(`Age: ${context.ageRange.min}–${context.ageRange.max}`);
+  }
+  
+  if (context.yearOfBirth) {
+    parts.push(`Born: ${context.yearOfBirth}`);
+  }
+  
+  if (context.yearOfDeath) {
+    parts.push(`Died: ${context.yearOfDeath}`);
+  } else if (context.dateRange) {
+    parts.push(`Year: ${context.dateRange.start}–${context.dateRange.end}`);
+  }
+  
+  if (context.monthOfDeath) {
+    const monthNames = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    parts.push(`Month: ${monthNames[context.monthOfDeath]}`);
+  }
+  
+  if (context.plotNumber) {
+    parts.push(`Plot: ${context.plotNumber}`);
+  }
+  
+  if (context.relationship) {
+    parts.push(`Relation: ${context.relationship}`);
+  }
+  
+  if (context.isFilipino) {
+    parts.push(`🇵🇭 Filipino`);
+  }
+  
+  return parts.length > 0 ? parts.join(' | ') : 'General search';
 }
 
 interface SearchContext {
@@ -171,6 +538,11 @@ interface SearchContext {
   firstNameVariations?: string[]; // First name variations including nicknames
   lastNameVariations?: string[]; // Last name variations including nicknames
   reversed?: boolean; // If name order was reversed (lastName firstName)
+  suffix?: string; // Jr., Sr., III, etc.
+  metaphoneFirstName?: string; // Double Metaphone for first name
+  metaphoneLastName?: string; // Double Metaphone for last name
+  interpretation?: string; // Human-readable interpretation of parsed query
+  spellingVariants?: string[]; // Common misspelling variants of names
 }
 
 /**
@@ -348,7 +720,11 @@ export function parseNaturalLanguageQuery(query: string): SearchContext {
       .replace(/\b(grave|tomb|burial|plot|puntod|libingan|nitso|sementeryo|cemetery|memorial)\b/gi, '')
       .replace(/\b(record|data|someone|person|tao|any|meron|mayroon|pwede|maaari|gusto|nais|kailangan)\b/gi, '')
       .replace(/\b(i'm|i am|we're|we are|looking|searching|trying|people)\b/gi, '')
+      .replace(/\b(ago|last|recently|long|month|today|yesterday|kamakailan|nakaraang|ngayong|dekada|decade)\b/gi, '')
+      .replace(/\b(Mr\.?|Mrs\.?|Ms\.?|Dr\.?|Engr\.?|Atty\.?|Prof\.?|G\.|Gng\.|Bb\.)\b/gi, '')
+      .replace(/\b(Jr\.?|Sr\.?|II|III|IV|V|VI|VII|VIII|2nd|3rd|4th)\b/gi, '')
       .replace(/\b(19\d{2}|20\d{2})\b/g, '') // years
+      .replace(/\b'?\d{2}s\b/g, '') // decades like 90s, '80s
       .replace(/\b\d{1,3}\b/g, '') // small numbers (ages)
       .replace(/\b(january|february|march|april|may|june|july|august|september|october|november|december)\b/gi, '')
       .replace(/\b(enero|pebrero|marso|abril|mayo|hunyo|hulyo|agosto|setyembre|oktubre|nobyembre|disyembre)\b/gi, '')
@@ -449,6 +825,54 @@ export function parseNaturalLanguageQuery(query: string): SearchContext {
   }
   if (context.lastName) {
     context.lastNameVariations = expandNicknames(context.lastName);
+  }
+
+  // Strip titles from names (Mr., Mrs., Dr., Engr., etc.)
+  if (context.firstName) {
+    context.firstName = stripTitles(context.firstName);
+  }
+  if (context.fullName) {
+    context.fullName = stripTitles(context.fullName);
+  }
+
+  // Extract suffixes from names (Jr., Sr., III, etc.)
+  if (context.lastName) {
+    const { cleanName, suffix } = extractSuffix(context.lastName);
+    context.lastName = cleanName;
+    if (suffix) context.suffix = suffix;
+  } else if (context.firstName) {
+    const { cleanName, suffix } = extractSuffix(context.firstName);
+    context.firstName = cleanName;
+    if (suffix) context.suffix = suffix;
+  }
+
+  // Generate Double Metaphone codes for better phonetic matching
+  if (context.firstName) {
+    const [primary] = doubleMetaphone(context.firstName);
+    context.metaphoneFirstName = primary;
+  }
+  if (context.lastName) {
+    const [primary] = doubleMetaphone(context.lastName);
+    context.metaphoneLastName = primary;
+  }
+
+  // Generate spelling variants for fuzzy matching
+  const allVariants: string[] = [];
+  if (context.firstName) {
+    allVariants.push(...getSpellingVariants(context.firstName));
+    // Add spelling variants to firstNameVariations
+    if (!context.firstNameVariations) context.firstNameVariations = [context.firstName];
+    context.firstNameVariations.push(...getSpellingVariants(context.firstName));
+    context.firstNameVariations = [...new Set(context.firstNameVariations)];
+  }
+  if (context.lastName) {
+    allVariants.push(...getSpellingVariants(context.lastName));
+    if (!context.lastNameVariations) context.lastNameVariations = [context.lastName];
+    context.lastNameVariations.push(...getSpellingVariants(context.lastName));
+    context.lastNameVariations = [...new Set(context.lastNameVariations)];
+  }
+  if (allVariants.length > 0) {
+    context.spellingVariants = [...new Set(allVariants)];
   }
 
   // Try reversed name order (lastName firstName) if we have both
@@ -806,6 +1230,115 @@ export function parseNaturalLanguageQuery(query: string): SearchContext {
       context.monthOfBirth = monthNames[birthMonthMatch[1].toLowerCase()];
     }
   }
+
+  // ===== RELATIVE TIME EXPRESSIONS =====
+  const currentYear = new Date().getFullYear();
+  const currentMonth = new Date().getMonth() + 1;
+  
+  // "died X years ago", "namatay X taon na ang nakaraan"
+  const yearsAgoPatterns = [
+    /(?:died|passed|death|buried|namatay|pumanaw|yumao)\s+(\d{1,3})\s+(?:years?|yrs?|taon)\s+(?:ago|na ang nakaraan|na nakalipas|na ang nakakaraan)/i,
+    /(\d{1,3})\s+(?:years?|yrs?|taon)\s+(?:ago|na ang nakaraan|na nakalipas)\s+(?:died|passed|namatay|pumanaw)/i,
+    /(?:mga|about|around)?\s*(\d{1,3})\s+(?:years?|taon)\s+(?:ago|na ang nakaraan|na nakalipas)/i,
+  ];
+  if (!context.yearOfDeath) {
+    for (const pattern of yearsAgoPatterns) {
+      const match = queryLower.match(pattern);
+      if (match) {
+        context.yearOfDeath = currentYear - parseInt(match[1]);
+        break;
+      }
+    }
+  }
+
+  // "born X years ago"
+  const bornYearsAgoPatterns = [
+    /(?:born|birth|ipinanganak|isinilang)\s+(\d{1,3})\s+(?:years?|yrs?|taon)\s+(?:ago|na ang nakaraan|na nakalipas)/i,
+  ];
+  if (!context.yearOfBirth) {
+    for (const pattern of bornYearsAgoPatterns) {
+      const match = queryLower.match(pattern);
+      if (match) {
+        context.yearOfBirth = currentYear - parseInt(match[1]);
+        break;
+      }
+    }
+  }
+
+  // "last year", "this year", "last month", etc.
+  const relativeTimePatterns: { pattern: RegExp; handler: () => void }[] = [
+    { pattern: /\b(?:last year|noong nakaraang taon|nakaraang taon)\b/i, handler: () => { if (!context.yearOfDeath) context.yearOfDeath = currentYear - 1; } },
+    { pattern: /\b(?:this year|ngayong taon|nitong taon)\b/i, handler: () => { if (!context.yearOfDeath) context.yearOfDeath = currentYear; } },
+    { pattern: /\b(?:two years ago|dalawang taon na ang nakaraan)\b/i, handler: () => { if (!context.yearOfDeath) context.yearOfDeath = currentYear - 2; } },
+    { pattern: /\b(?:three years ago|tatlong taon na ang nakaraan)\b/i, handler: () => { if (!context.yearOfDeath) context.yearOfDeath = currentYear - 3; } },
+    { pattern: /\b(?:five years ago|limang taon na ang nakaraan)\b/i, handler: () => { if (!context.yearOfDeath) context.yearOfDeath = currentYear - 5; } },
+    { pattern: /\b(?:ten years ago|sampung taon na ang nakaraan)\b/i, handler: () => { if (!context.yearOfDeath) context.yearOfDeath = currentYear - 10; } },
+    { pattern: /\b(?:recently|kamakailan|katatapos|kakamamatay)\b/i, handler: () => { 
+      if (!context.dateRange) context.dateRange = { start: currentYear - 2, end: currentYear }; 
+    }},
+    { pattern: /\b(?:long ago|matagal na|dati|noon|a long time ago)\b/i, handler: () => { 
+      if (!context.dateRange) context.dateRange = { start: currentYear - 50, end: currentYear - 10 }; 
+    }},
+    { pattern: /\b(?:last month|noong nakaraang buwan)\b/i, handler: () => { 
+      if (!context.monthOfDeath) {
+        context.monthOfDeath = currentMonth === 1 ? 12 : currentMonth - 1;
+        if (!context.yearOfDeath) context.yearOfDeath = currentMonth === 1 ? currentYear - 1 : currentYear;
+      }
+    }},
+    { pattern: /\b(?:this month|ngayong buwan|nitong buwan)\b/i, handler: () => { 
+      if (!context.monthOfDeath) {
+        context.monthOfDeath = currentMonth;
+        if (!context.yearOfDeath) context.yearOfDeath = currentYear;
+      }
+    }},
+  ];
+  
+  for (const { pattern, handler } of relativeTimePatterns) {
+    if (pattern.test(queryLower)) {
+      handler();
+    }
+  }
+
+  // ===== DECADE / ERA QUERIES =====
+  // "born in the 80s", "died in the 90s", "from the 2000s", "noong dekada nobenta"
+  const decadePatterns = [
+    // English: "in the 80s", "in the '90s", "from the 2000s"
+    { pattern: /(?:in|from|during)\s+(?:the\s+)?'?(\d{2})s\b/i, handler: (m: RegExpMatchArray) => {
+      const decade = parseInt(m[1]);
+      const fullDecade = decade < 30 ? 2000 + decade : 1900 + decade;
+      if (!context.dateRange) context.dateRange = { start: fullDecade, end: fullDecade + 9 };
+    }},
+    // "in the 1990s", "in the 2000s"
+    { pattern: /(?:in|from|during)\s+(?:the\s+)?(\d{4})s\b/i, handler: (m: RegExpMatchArray) => {
+      const decade = parseInt(m[1]);
+      if (!context.dateRange) context.dateRange = { start: decade, end: decade + 9 };
+    }},
+    // Filipino decades: "noong dekada nobenta", "sa dekada otsenta"
+    { pattern: /(?:noong|sa)\s+(?:dekada|decade)\s+(sisenta|setenta|otsenta|nobenta|dos mil)/i, handler: (m: RegExpMatchArray) => {
+      const decadeMap: Record<string, number> = { 'sisenta': 1960, 'setenta': 1970, 'otsenta': 1980, 'nobenta': 1990, 'dos mil': 2000 };
+      const start = decadeMap[m[1].toLowerCase()] || 1990;
+      if (!context.dateRange) context.dateRange = { start, end: start + 9 };
+    }},
+    // Simple: "80s", "'90s", "2000s"
+    { pattern: /\b'?(\d{2})s\b(?!\s*(?:old|age|taon|gulang))/i, handler: (m: RegExpMatchArray) => {
+      const decade = parseInt(m[1]);
+      if (decade >= 50 || decade <= 30) { // Likely a decade, not an age
+        const fullDecade = decade < 30 ? 2000 + decade : 1900 + decade;
+        if (!context.dateRange) context.dateRange = { start: fullDecade, end: fullDecade + 9 };
+      }
+    }},
+  ];
+  
+  for (const { pattern, handler } of decadePatterns) {
+    const match = queryLower.match(pattern);
+    if (match) {
+      handler(match);
+      break;
+    }
+  }
+
+  // Build human-readable interpretation
+  context.interpretation = buildInterpretation(context);
   
   return context;
 }
@@ -1118,6 +1651,20 @@ export async function rankSearchResults(
         if (context.soundexFirstName && soundex(firstNameLower) === context.soundexFirstName) {
           score += 0.18;
         }
+        // Double Metaphone matching (better for Filipino names: Kris/Chris, Jiro/Giro)
+        if (context.metaphoneFirstName) {
+          const [resultPrimary, resultSecondary] = doubleMetaphone(firstNameLower);
+          if (resultPrimary === context.metaphoneFirstName || resultSecondary === context.metaphoneFirstName) {
+            score += 0.2;
+          }
+        }
+        // Spelling variant matching
+        if (context.spellingVariants) {
+          const hasVariantMatch = context.spellingVariants.some(v => 
+            firstNameLower === v || firstNameLower.startsWith(v) || v.startsWith(firstNameLower)
+          );
+          if (hasVariantMatch) score += 0.15;
+        }
       }
       
       if (context.lastName) {
@@ -1137,6 +1684,13 @@ export async function rankSearchResults(
         // Phonetic (Soundex) matching for names
         if (context.soundexLastName && soundex(lastNameLower) === context.soundexLastName) {
           score += 0.22;
+        }
+        // Double Metaphone matching for last name
+        if (context.metaphoneLastName) {
+          const [resultPrimary, resultSecondary] = doubleMetaphone(lastNameLower);
+          if (resultPrimary === context.metaphoneLastName || resultSecondary === context.metaphoneLastName) {
+            score += 0.22;
+          }
         }
       }
       

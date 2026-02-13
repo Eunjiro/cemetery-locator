@@ -69,7 +69,16 @@ export default function GraveLocatorPage() {
   const [fromBookmark, setFromBookmark] = useState<boolean>(false);
   const [isListening, setIsListening] = useState<boolean>(false);
   const [voiceSupported, setVoiceSupported] = useState<boolean>(false);
+  const [searchInterpretation, setSearchInterpretation] = useState<string>('');
+  const [voiceLang, setVoiceLang] = useState<'en-US' | 'fil-PH'>('en-US');
   const recognitionRef = useRef<any>(null);
+
+  // Assistant overlay state
+  const [assistantState, setAssistantState] = useState<'idle' | 'listening' | 'processing' | 'found' | 'not-found'>('idle');
+  const [assistantMessage, setAssistantMessage] = useState<string>('');
+  const [assistantTranscript, setAssistantTranscript] = useState<string>('');
+  const [assistantResultCount, setAssistantResultCount] = useState<number>(0);
+  const assistantTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     fetchCemeteryData();
@@ -312,6 +321,7 @@ export default function GraveLocatorPage() {
       setSearchResults(data.results || []);
       setAiEnabled(data.aiEnabled || false);
       setSearchSuggestions(data.suggestions || []);
+      setSearchInterpretation(data.interpretation || '');
       
       // Update pagination state
       if (data.pagination) {
@@ -444,6 +454,45 @@ export default function GraveLocatorPage() {
     }
   };
 
+  // Extract a friendly search description from a voice query
+  const getAssistantSearchMessage = (transcript: string): string => {
+    const lower = transcript.toLowerCase();
+    
+    // Try to extract a name from common patterns
+    const namePatterns = [
+      /(?:find|search|look for|looking for|locate|show me|where is|who is)\s+(.+?)(?:\s+(?:born|died|buried|age|about|around|from|in|on|last|who|that|and|with)|$)/i,
+      /(?:hanap|hanapin|nasaan|pakihanap)\s+(?:si|ni|kay)?\s*(.+?)(?:\s+(?:namatay|ipinanganak|born|died|age|na|sa|noong)|$)/i,
+      /(?:find|hanap|where|nasaan)\s+(?:si|ni|kay|ang)?\s+(.+?)(?:\s|$)/i,
+    ];
+    
+    for (const pattern of namePatterns) {
+      const match = lower.match(pattern);
+      if (match) {
+        const name = match[1].trim()
+          .replace(/\b(si|ni|kay|ang|yung|please|po)\b/gi, '')
+          .trim();
+        if (name.length >= 2) {
+          // Capitalize first letters
+          const capitalized = name.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+          return capitalized;
+        }
+      }
+    }
+    
+    // Fallback: just use the whole transcript
+    return transcript.length > 40 ? transcript.slice(0, 40) + '...' : transcript;
+  };
+
+  const dismissAssistant = () => {
+    setAssistantState('idle');
+    setAssistantMessage('');
+    setAssistantTranscript('');
+    if (assistantTimerRef.current) {
+      clearTimeout(assistantTimerRef.current);
+      assistantTimerRef.current = null;
+    }
+  };
+
   const startVoiceRecognition = () => {
     if (!voiceSupported) {
       alert('Voice recognition is not supported in your browser. / Ang voice recognition ay hindi suportado sa iyong browser.');
@@ -454,37 +503,95 @@ export default function GraveLocatorPage() {
     const recognition = new SpeechRecognition();
     
     // Configure recognition
-    recognition.continuous = false; // Stop after one result
+    recognition.continuous = false;
     recognition.interimResults = false;
     recognition.maxAlternatives = 1;
-    
-    // Support both English and Filipino
-    recognition.lang = 'en-US'; // Default to English, can be changed to 'tl-PH' for Filipino
+    recognition.lang = voiceLang;
     
     recognition.onstart = () => {
       setIsListening(true);
+      setAssistantState('listening');
+      setAssistantMessage(voiceLang === 'fil-PH' ? 'Nakikinig ako...' : "I'm listening...");
+      setAssistantTranscript('');
     };
     
-    recognition.onresult = (event: any) => {
+    recognition.onresult = async (event: any) => {
       const transcript = event.results[0][0].transcript;
       setSearchQuery(transcript);
       setIsListening(false);
+      setAssistantTranscript(transcript);
       
-      // Automatically perform search with the voice input
-      performSearch(transcript);
+      // Switch to processing state with friendly message
+      const searchTarget = getAssistantSearchMessage(transcript);
+      setAssistantState('processing');
+      setAssistantMessage(voiceLang === 'fil-PH' 
+        ? `Hinahanap si ${searchTarget}...` 
+        : `Finding ${searchTarget}...`);
+      
+      // Perform the search
+      try {
+        const response = await fetch(
+          `/api/deceased/search?q=${encodeURIComponent(transcript)}&cemetery_id=${cemeteryId}&page=1&pageSize=20`
+        );
+        const data = await response.json();
+        const results = data.results || [];
+        
+        setSearchResults(results);
+        setAiEnabled(data.aiEnabled || false);
+        setSearchSuggestions(data.suggestions || []);
+        setSearchInterpretation(data.interpretation || '');
+        setShowSearchResults(true);
+        setAssistantResultCount(results.length);
+        
+        if (data.pagination) {
+          setCurrentPage(data.pagination.page);
+          setTotalPages(data.pagination.totalPages);
+          setTotalResults(data.pagination.totalResults);
+          setHasNextPage(data.pagination.hasNextPage);
+          setHasPrevPage(data.pagination.hasPrevPage);
+        }
+        
+        if (results.length > 0) {
+          const topResult = results[0];
+          setAssistantState('found');
+          setAssistantMessage(voiceLang === 'fil-PH'
+            ? `Natagpuan ko si ${topResult.first_name} ${topResult.last_name}${results.length > 1 ? ` at ${results.length - 1} pa` : ''}`
+            : `Found ${topResult.first_name} ${topResult.last_name}${results.length > 1 ? ` and ${results.length - 1} more` : ''}`);
+        } else {
+          setAssistantState('not-found');
+          setAssistantMessage(voiceLang === 'fil-PH'
+            ? `Walang natagpuan para sa "${searchTarget}"`
+            : `No results found for "${searchTarget}"`);
+        }
+        
+        // Auto-dismiss after 3 seconds
+        assistantTimerRef.current = setTimeout(() => {
+          setAssistantState('idle');
+        }, 3500);
+      } catch (error) {
+        console.error('Error searching:', error);
+        setAssistantState('not-found');
+        setAssistantMessage('Something went wrong. Try again.');
+        assistantTimerRef.current = setTimeout(() => setAssistantState('idle'), 3000);
+      }
     };
     
     recognition.onerror = (event: any) => {
       console.error('Voice recognition error:', event.error);
       setIsListening(false);
+      setAssistantState('not-found');
       
       if (event.error === 'no-speech') {
-        alert('No speech detected. Please try again. / Walang narinig. Subukan muli.');
+        setAssistantMessage(voiceLang === 'fil-PH' ? 'Walang narinig. Subukan muli.' : 'No speech detected. Try again.');
       } else if (event.error === 'audio-capture') {
-        alert('Microphone not found. / Walang microphone.');
+        setAssistantMessage(voiceLang === 'fil-PH' ? 'Walang microphone.' : 'Microphone not found.');
       } else if (event.error === 'not-allowed') {
-        alert('Microphone permission denied. / Ipinagkait ang pahintulot sa microphone.');
+        setAssistantMessage(voiceLang === 'fil-PH' ? 'Ipinagkait ang microphone.' : 'Microphone permission denied.');
+      } else {
+        setAssistantMessage('Voice error. Please try again.');
       }
+      
+      assistantTimerRef.current = setTimeout(() => setAssistantState('idle'), 3000);
     };
     
     recognition.onend = () => {
@@ -498,6 +605,7 @@ export default function GraveLocatorPage() {
     } catch (error) {
       console.error('Error starting voice recognition:', error);
       setIsListening(false);
+      setAssistantState('idle');
     }
   };
 
@@ -505,6 +613,9 @@ export default function GraveLocatorPage() {
     if (recognitionRef.current) {
       recognitionRef.current.stop();
       setIsListening(false);
+      if (assistantState === 'listening') {
+        setAssistantState('idle');
+      }
     }
   };
 
@@ -957,7 +1068,7 @@ export default function GraveLocatorPage() {
                 placeholder={aiEnabled 
                   ? "Try: name, date, month, or range (e.g., 'John 2020', 'January', '2020-2026')" 
                   : "Search by name, date, month, or year range"}
-                className="w-full pl-12 pr-12 py-3 sm:py-3.5 border-2 border-gray-300 rounded-lg sm:rounded-xl focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-200 text-sm sm:text-base text-gray-900 placeholder:text-gray-500 bg-white touch-manipulation transition-all"
+                className="w-full pl-12 pr-24 py-3 sm:py-3.5 border-2 border-gray-300 rounded-lg sm:rounded-xl focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-200 text-sm sm:text-base text-gray-900 placeholder:text-gray-500 bg-white touch-manipulation transition-all"
                 autoComplete="off"
                 aria-label="Search for graves using natural language"
               />
@@ -972,26 +1083,38 @@ export default function GraveLocatorPage() {
               
               {/* Voice Recognition Button */}
               {voiceSupported && !isSearching && (
-                <button
-                  type="button"
-                  onClick={isListening ? stopVoiceRecognition : startVoiceRecognition}
-                  className={`absolute ${searchQuery ? 'right-14' : 'right-2'} top-1/2 -translate-y-1/2 p-2.5 rounded-lg transition-all touch-manipulation ${
-                    isListening 
-                      ? 'bg-red-500 hover:bg-red-600 text-white animate-pulse' 
-                      : 'bg-blue-500 hover:bg-blue-600 active:bg-blue-700 text-white'
-                  }`}
-                  title={isListening ? 'Stop listening' : 'Start voice search'}
-                >
-                  {isListening ? (
-                    <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8 7a1 1 0 00-1 1v4a1 1 0 001 1h4a1 1 0 001-1V8a1 1 0 00-1-1H8z" clipRule="evenodd" />
-                    </svg>
-                  ) : (
-                    <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M7 4a3 3 0 016 0v4a3 3 0 11-6 0V4zm4 10.93A7.001 7.001 0 0017 8a1 1 0 10-2 0A5 5 0 015 8a1 1 0 00-2 0 7.001 7.001 0 006 6.93V17H6a1 1 0 100 2h8a1 1 0 100-2h-3v-2.07z" clipRule="evenodd" />
-                    </svg>
-                  )}
-                </button>
+                <div className={`absolute ${searchQuery ? 'right-14' : 'right-2'} top-1/2 -translate-y-1/2 flex items-center gap-0.5`}>
+                  {/* Language toggle */}
+                  <button
+                    type="button"
+                    onClick={() => setVoiceLang(voiceLang === 'en-US' ? 'fil-PH' : 'en-US')}
+                    className="p-1 rounded-l-lg bg-gray-100 hover:bg-gray-200 text-[10px] font-bold text-gray-600 transition-colors touch-manipulation border border-gray-300"
+                    title={`Voice language: ${voiceLang === 'en-US' ? 'English' : 'Filipino'}. Click to switch.`}
+                  >
+                    {voiceLang === 'en-US' ? 'EN' : 'FIL'}
+                  </button>
+                  {/* Mic button */}
+                  <button
+                    type="button"
+                    onClick={isListening ? stopVoiceRecognition : startVoiceRecognition}
+                    className={`p-2.5 rounded-r-lg transition-all touch-manipulation ${
+                      isListening 
+                        ? 'bg-red-500 hover:bg-red-600 text-white animate-pulse' 
+                        : 'bg-blue-500 hover:bg-blue-600 active:bg-blue-700 text-white'
+                    }`}
+                    title={isListening ? 'Stop listening' : `Voice search (${voiceLang === 'en-US' ? 'English' : 'Filipino'})`}
+                  >
+                    {isListening ? (
+                      <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8 7a1 1 0 00-1 1v4a1 1 0 001 1h4a1 1 0 001-1V8a1 1 0 00-1-1H8z" clipRule="evenodd" />
+                      </svg>
+                    ) : (
+                      <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M7 4a3 3 0 016 0v4a3 3 0 11-6 0V4zm4 10.93A7.001 7.001 0 0017 8a1 1 0 10-2 0A5 5 0 015 8a1 1 0 00-2 0 7.001 7.001 0 006 6.93V17H6a1 1 0 100 2h8a1 1 0 100-2h-3v-2.07z" clipRule="evenodd" />
+                      </svg>
+                    )}
+                  </button>
+                </div>
               )}
               
               {searchQuery && (
@@ -1036,6 +1159,15 @@ export default function GraveLocatorPage() {
                       </span>
                     )}
                   </div>
+                  {/* Search Interpretation */}
+                  {searchInterpretation && searchInterpretation !== 'General search' && (
+                    <div className="mt-1 text-xs text-gray-500 flex items-center gap-1">
+                      <svg className="w-3 h-3 text-blue-500 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                      </svg>
+                      <span className="truncate">Understood: {searchInterpretation}</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Scrollable results */}
@@ -1160,6 +1292,155 @@ export default function GraveLocatorPage() {
             )}
           </form>
         </div>
+
+        {/* Voice Assistant Overlay */}
+        {assistantState !== 'idle' && (
+          <div 
+            className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 backdrop-blur-sm transition-all"
+            onClick={(e) => {
+              if (e.target === e.currentTarget && assistantState !== 'processing') {
+                dismissAssistant();
+              }
+            }}
+          >
+            <div className="bg-white rounded-2xl shadow-2xl mx-4 w-full max-w-sm overflow-hidden animate-in fade-in zoom-in duration-300">
+              {/* Assistant Header */}
+              <div className={`px-6 pt-6 pb-4 text-center ${
+                assistantState === 'listening' ? 'bg-gradient-to-b from-blue-50' :
+                assistantState === 'processing' ? 'bg-gradient-to-b from-green-50' :
+                assistantState === 'found' ? 'bg-gradient-to-b from-green-50' :
+                'bg-gradient-to-b from-red-50'
+              }`}>
+                {/* Animated Icon */}
+                <div className="mb-4 flex justify-center">
+                  {assistantState === 'listening' && (
+                    <div className="relative">
+                      <div className="w-20 h-20 rounded-full bg-blue-500 flex items-center justify-center animate-pulse">
+                        <svg className="w-10 h-10 text-white" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M7 4a3 3 0 016 0v4a3 3 0 11-6 0V4zm4 10.93A7.001 7.001 0 0017 8a1 1 0 10-2 0A5 5 0 015 8a1 1 0 00-2 0 7.001 7.001 0 006 6.93V17H6a1 1 0 100 2h8a1 1 0 100-2h-3v-2.07z" clipRule="evenodd" />
+                        </svg>
+                      </div>
+                      {/* Sound wave rings */}
+                      <div className="absolute inset-0 rounded-full border-4 border-blue-300 animate-ping opacity-20"></div>
+                      <div className="absolute -inset-2 rounded-full border-2 border-blue-200 animate-ping opacity-10" style={{ animationDelay: '0.5s' }}></div>
+                    </div>
+                  )}
+                  
+                  {assistantState === 'processing' && (
+                    <div className="relative">
+                      <div className="w-20 h-20 rounded-full bg-green-500 flex items-center justify-center">
+                        <svg className="w-10 h-10 text-white animate-spin" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                      </div>
+                      <div className="absolute inset-0 rounded-full border-4 border-green-300 animate-pulse opacity-40"></div>
+                    </div>
+                  )}
+                  
+                  {assistantState === 'found' && (
+                    <div className="w-20 h-20 rounded-full bg-green-500 flex items-center justify-center">
+                      <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                      </svg>
+                    </div>
+                  )}
+                  
+                  {assistantState === 'not-found' && (
+                    <div className="w-20 h-20 rounded-full bg-gray-400 flex items-center justify-center">
+                      <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 10l4 4m0-4l-4 4" />
+                      </svg>
+                    </div>
+                  )}
+                </div>
+                
+                {/* Main Message */}
+                <h3 className={`text-lg font-bold mb-1 ${
+                  assistantState === 'listening' ? 'text-blue-700' :
+                  assistantState === 'processing' ? 'text-green-700' :
+                  assistantState === 'found' ? 'text-green-700' :
+                  'text-gray-700'
+                }`}>
+                  {assistantMessage}
+                </h3>
+                
+                {/* Transcript display */}
+                {assistantTranscript && assistantState !== 'listening' && (
+                  <div className="mt-2 px-4 py-2 bg-white/70 rounded-lg border border-gray-200">
+                    <p className="text-xs text-gray-500 mb-0.5">You said:</p>
+                    <p className="text-sm text-gray-800 italic">&quot;{assistantTranscript}&quot;</p>
+                  </div>
+                )}
+                
+                {/* Listening hint */}
+                {assistantState === 'listening' && (
+                  <p className="text-sm text-blue-500 mt-1">
+                    {voiceLang === 'fil-PH' 
+                      ? 'Sabihin ang pangalan o tanong...'
+                      : 'Say a name or question...'}
+                  </p>
+                )}
+                
+                {/* Processing dots animation */}
+                {assistantState === 'processing' && (
+                  <div className="flex justify-center gap-1.5 mt-3">
+                    <div className="w-2 h-2 rounded-full bg-green-400 animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                    <div className="w-2 h-2 rounded-full bg-green-400 animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                    <div className="w-2 h-2 rounded-full bg-green-400 animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                  </div>
+                )}
+                
+                {/* Found result count */}
+                {assistantState === 'found' && assistantResultCount > 0 && (
+                  <p className="text-sm text-green-600 mt-1">
+                    {assistantResultCount} {assistantResultCount === 1 ? 'result' : 'results'} found
+                  </p>
+                )}
+              </div>
+              
+              {/* Action Buttons */}
+              <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex gap-3">
+                {assistantState === 'listening' && (
+                  <button
+                    onClick={() => { stopVoiceRecognition(); dismissAssistant(); }}
+                    className="flex-1 py-2.5 bg-red-500 hover:bg-red-600 text-white rounded-xl font-medium text-sm transition-colors touch-manipulation"
+                  >
+                    Stop Listening
+                  </button>
+                )}
+                
+                {assistantState === 'processing' && (
+                  <div className="flex-1 py-2.5 text-center text-gray-400 text-sm font-medium">
+                    Please wait...
+                  </div>
+                )}
+                
+                {(assistantState === 'found' || assistantState === 'not-found') && (
+                  <>
+                    <button
+                      onClick={dismissAssistant}
+                      className={`flex-1 py-2.5 rounded-xl font-medium text-sm transition-colors touch-manipulation ${
+                        assistantState === 'found' 
+                          ? 'bg-green-600 hover:bg-green-700 text-white'
+                          : 'bg-gray-600 hover:bg-gray-700 text-white'
+                      }`}
+                    >
+                      {assistantState === 'found' ? 'View Results' : 'Close'}
+                    </button>
+                    <button
+                      onClick={() => { dismissAssistant(); startVoiceRecognition(); }}
+                      className="flex-1 py-2.5 bg-blue-500 hover:bg-blue-600 text-white rounded-xl font-medium text-sm transition-colors touch-manipulation"
+                    >
+                      Try Again
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Navigation Controls */}
         {selectedResult && (
