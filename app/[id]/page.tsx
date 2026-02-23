@@ -39,6 +39,7 @@ export default function GraveLocatorPage() {
   const [plots, setPlots] = useState<Plot[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [facilityResults, setFacilityResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [showSearchResults, setShowSearchResults] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
@@ -48,6 +49,7 @@ export default function GraveLocatorPage() {
   const [hasPrevPage, setHasPrevPage] = useState(false);
   const [highlightedPlotId, setHighlightedPlotId] = useState<number | null>(null);
   const [selectedResult, setSelectedResult] = useState<any | null>(null);
+  const [highlightedFacility, setHighlightedFacility] = useState<any | null>(null);
   const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
   const [route, setRoute] = useState<[number, number][] | null>(null);
   const [routeInfo, setRouteInfo] = useState<Route | null>(null);
@@ -307,6 +309,7 @@ export default function GraveLocatorPage() {
   const performSearch = async (query: string, page: number = 1) => {
     if (!query.trim()) {
       setSearchResults([]);
+      setFacilityResults([]);
       setShowSearchResults(false);
       setCurrentPage(1);
       setTotalPages(1);
@@ -318,26 +321,35 @@ export default function GraveLocatorPage() {
     setShowSearchResults(true);
 
     try {
-      const response = await fetch(
+      // Search deceased persons
+      const deceasedRes = await fetch(
         `/api/deceased/search?q=${encodeURIComponent(query)}&cemetery_id=${cemeteryId}&page=${page}&pageSize=20`
       );
-      const data = await response.json();
-      setSearchResults(data.results || []);
-      setAiEnabled(data.aiEnabled || false);
-      setSearchSuggestions(data.suggestions || []);
-      setSearchInterpretation(data.interpretation || '');
-      
-      // Update pagination state
-      if (data.pagination) {
-        setCurrentPage(data.pagination.page);
-        setTotalPages(data.pagination.totalPages);
-        setTotalResults(data.pagination.totalResults);
-        setHasNextPage(data.pagination.hasNextPage);
-        setHasPrevPage(data.pagination.hasPrevPage);
+      const deceasedData = await deceasedRes.json();
+      setSearchResults(deceasedData.results || []);
+      setAiEnabled(deceasedData.aiEnabled || false);
+      setSearchSuggestions(deceasedData.suggestions || []);
+      setSearchInterpretation(deceasedData.interpretation || '');
+
+      // Search facilities
+      const facilityRes = await fetch(
+        `/api/facilities?cemetery_id=${cemeteryId}&q=${encodeURIComponent(query)}`
+      );
+      const facilityData = await facilityRes.json();
+      setFacilityResults(facilityData.facilities || []);
+
+      // Update pagination state (for deceased only)
+      if (deceasedData.pagination) {
+        setCurrentPage(deceasedData.pagination.page);
+        setTotalPages(deceasedData.pagination.totalPages);
+        setTotalResults(deceasedData.pagination.totalResults);
+        setHasNextPage(deceasedData.pagination.hasNextPage);
+        setHasPrevPage(deceasedData.pagination.hasPrevPage);
       }
     } catch (error) {
-      console.error('Error searching deceased:', error);
+      console.error('Error searching:', error);
       setSearchResults([]);
+      setFacilityResults([]);
     } finally {
       setIsSearching(false);
     }
@@ -365,6 +377,43 @@ export default function GraveLocatorPage() {
     const plot = plots.find(p => p.id === result.plot_id);
     if (plot && plot.latitude && plot.longitude && userLocation) {
       handleGetDirections([plot.latitude, plot.longitude]);
+    }
+  };
+
+  // Facility result selection handler
+  const handleSelectFacilityResult = (facility: any) => {
+    // Optionally highlight facility on map or center the map
+    if (facility.latitude && facility.longitude) {
+      setCenterCoordinates([facility.latitude, facility.longitude]);
+    } else if (facility.map_coordinates && facility.map_coordinates.length > 0) {
+      const coords = facility.map_coordinates[0];
+      if (Array.isArray(coords) && coords.length === 2) {
+        setCenterCoordinates([coords[0], coords[1]]);
+      }
+    }
+
+    // Keep results visible so user can interact further
+    setShowSearchResults(true);
+    // Highlight facility on map
+    setHighlightedFacility(facility);
+    // Optionally set selectedResult to facility for downstream actions
+    setSelectedResult({ facility_id: facility.id, ...facility });
+
+    // If we have user location, open directions to the facility
+    let destination: [number, number] | null = null;
+    if (facility.latitude && facility.longitude) {
+      destination = [facility.latitude, facility.longitude];
+    } else if (facility.map_coordinates && facility.map_coordinates.length > 0) {
+      const coords = facility.map_coordinates[0];
+      if (Array.isArray(coords) && coords.length === 2) {
+        destination = [coords[0], coords[1]];
+      }
+    }
+
+    if (destination && userLocation) {
+      // clear any highlighted plot
+      setHighlightedPlotId(null);
+      handleGetDirections(destination);
     }
   };
 
@@ -928,143 +977,7 @@ export default function GraveLocatorPage() {
         {/* Search Bar - AI Enhanced */}
         <div className="mb-3 sm:mb-4 relative z-40">
           <form onSubmit={handleSearch} className="relative">
-            {/* AI Badge, Language Toggle & Tips */}
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2">
-                {aiEnabled && (
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-gradient-to-r from-purple-500 to-blue-500 text-white text-xs font-semibold rounded-full shadow-sm">
-                    <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
-                      <path d="M13 7H7v6h6V7z"/>
-                      <path fillRule="evenodd" d="M7 2a1 1 0 012 0v1h2V2a1 1 0 112 0v1h2a2 2 0 012 2v2h1a1 1 0 110 2h-1v2h1a1 1 0 110 2h-1v2a2 2 0 01-2 2h-2v1a1 1 0 11-2 0v-1H9v1a1 1 0 11-2 0v-1H5a2 2 0 01-2-2v-2H2a1 1 0 110-2h1V9H2a1 1 0 010-2h1V5a2 2 0 012-2h2V2zM5 5h10v10H5V5z" clipRule="evenodd"/>
-                    </svg>
-                    AI Search / AI Paghahanap
-                  </span>
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowSearchTips(!showSearchTips)}
-                className="text-xs text-gray-600 hover:text-green-600 font-medium flex items-center gap-1 touch-manipulation"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                Search Tips / Mga Tip sa Paghahanap
-              </button>
-            </div>
-
-            {/* Search Tips Panel */}
-            {showSearchTips && (
-              <div className="mb-3 bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-200 rounded-lg sm:rounded-xl p-4 sm:p-5 shadow-lg">
-                <div className="flex items-center justify-between mb-3">
-                  <h4 className="font-bold text-blue-900 text-sm sm:text-base flex items-center gap-2">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    Enhanced Search Tips / Mga Tip sa Paghahanap
-                  </h4>
-                  <button
-                    onClick={() => setShowSearchTips(false)}
-                    className="text-gray-500 hover:text-gray-700 p-1 touch-manipulation"
-                  >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                </div>
-                
-                <div className="space-y-4 text-xs sm:text-sm">
-                  {/* Name Search */}
-                  <div className="bg-white rounded-lg p-3 border border-blue-200">
-                    <h5 className="font-semibold text-gray-800 mb-2 flex items-center gap-1">
-                      <svg className="w-4 h-4 text-green-600" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
-                      </svg>
-                      Search by Name / Pangalan
-                    </h5>
-                    <ul className="space-y-1 text-gray-700 ml-5">
-                      <li>• "Juan dela Cruz" or "John Smith"</li>
-                      <li>• "Find Maria Santos" or "Hanap si Pedro"</li>
-                      <li>• "G. Juan Reyes" or "Mrs. Mary Johnson"</li>
-                    </ul>
-                  </div>
-
-                  {/* Date & Time Search */}
-                  <div className="bg-white rounded-lg p-3 border border-blue-200">
-                    <h5 className="font-semibold text-gray-800 mb-2 flex items-center gap-1">
-                      <svg className="w-4 h-4 text-purple-600" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd" />
-                      </svg>
-                      Search by Date & Time / Petsa at Panahon
-                    </h5>
-                    <ul className="space-y-1 text-gray-700 ml-5">
-                      <li>• <span className="font-medium">Year:</span> "2020", "died 2015", "namatay 2019"</li>
-                      <li>• <span className="font-medium">Year Range:</span> "2020-2026", "1990 to 2000", "between 2010 and 2020"</li>
-                      <li>• <span className="font-medium">Month:</span> "January", "December 2020", "died in March"</li>
-                      <li>• <span className="font-medium">Month Range:</span> "January-March", "January to March 2020"</li>
-                      <li>• <span className="font-medium">Filipino:</span> "Enero 2020", "mula 2015 hanggang 2020"</li>
-                      <li>• <span className="font-medium">Specific Date:</span> "2020-01-15", "15 January 2020", "01/15/2020"</li>
-                    </ul>
-                  </div>
-
-                  {/* Combined Search */}
-                  <div className="bg-white rounded-lg p-3 border border-blue-200">
-                    <h5 className="font-semibold text-gray-800 mb-2 flex items-center gap-1">
-                      <svg className="w-4 h-4 text-orange-600" fill="currentColor" viewBox="0 0 20 20">
-                        <path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z" />
-                        <path fillRule="evenodd" d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm3 4a1 1 0 000 2h.01a1 1 0 100-2H7zm3 0a1 1 0 000 2h3a1 1 0 100-2h-3zm-3 4a1 1 0 100 2h.01a1 1 0 100-2H7zm3 0a1 1 0 100 2h3a1 1 0 100-2h-3z" clipRule="evenodd" />
-                      </svg>
-                      Combined Search / Pinagsama
-                    </h5>
-                    <ul className="space-y-1 text-gray-700 ml-5">
-                      <li>• "John Smith 2020"</li>
-                      <li>• "Maria Santos January 2015"</li>
-                      <li>• "Find Juan dela Cruz died 2020-2026"</li>
-                      <li>• "Pedro namatay 2019"</li>
-                      <li>• "Mary born 1950 died December 2020"</li>
-                    </ul>
-                  </div>
-
-                  {/* Natural Language */}
-                  <div className="bg-white rounded-lg p-3 border border-blue-200">
-                    <h5 className="font-semibold text-gray-800 mb-2 flex items-center gap-1">
-                      <svg className="w-4 h-4 text-indigo-600" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7zM7 9H5v2h2V9zm8 0h-2v2h2V9zM9 9h2v2H9V9z" clipRule="evenodd" />
-                      </svg>
-                      Natural Language / Natural na Wika
-                    </h5>
-                    <ul className="space-y-1 text-gray-700 ml-5">
-                      <li>• "Show me people who died in 2020"</li>
-                      <li>• "Find graves from January to March 2020"</li>
-                      <li>• "Can you find jiro about 20 age I think born on 2023"</li>
-                      <li>• "Hanap ang mga yumao noong Enero 2020"</li>
-                      <li>• "Where is Juan who died between 2015 and 2020?"</li>
-                      <li>• "Nasaan si Maria na namatay 2019?"</li>
-                    </ul>
-                  </div>
-
-                  {/* Voice Search */}
-                  {voiceSupported && (
-                    <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-3 border border-blue-300">
-                      <h5 className="font-semibold text-gray-800 mb-2 flex items-center gap-1">
-                        <svg className="w-4 h-4 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M7 4a3 3 0 016 0v4a3 3 0 11-6 0V4zm4 10.93A7.001 7.001 0 0017 8a1 1 0 10-2 0A5 5 0 015 8a1 1 0 00-2 0 7.001 7.001 0 006 6.93V17H6a1 1 0 100 2h8a1 1 0 100-2h-3v-2.07z" clipRule="evenodd" />
-                        </svg>
-                        Voice Search / Paghahanap gamit ang Boses
-                      </h5>
-                      <p className="text-sm text-gray-700 mb-2">
-                        Click the microphone button to search using your voice! / I-click ang microphone para maghanap gamit ang iyong boses!
-                      </p>
-                      <ul className="space-y-1 text-gray-700 ml-5 text-xs">
-                        <li>• Speak naturally in English or Filipino</li>
-                        <li>• Try: "Find John Smith died 2020"</li>
-                        <li>• Try: "Hanap si Maria namatay 2019"</li>
-                      </ul>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
+            {/* ...existing code... */}
 
             <div className="relative">
               <div className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400">
@@ -1077,14 +990,12 @@ export default function GraveLocatorPage() {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onFocus={() => {
-                  if (searchQuery.trim() && searchResults.length > 0) {
+                  if (searchQuery.trim() && (searchResults.length > 0 || facilityResults.length > 0)) {
                     setShowSearchResults(true);
                   }
                 }}
-                placeholder={aiEnabled 
-                  ? "Try: name, date, month, or range (e.g., 'John 2020', 'January', '2020-2026')" 
-                  : "Search by name, date, month, or year range"}
-                className="w-full pl-12 pr-24 py-3 sm:py-3.5 border-2 border-gray-300 rounded-lg sm:rounded-xl focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-200 text-sm sm:text-base text-gray-900 placeholder:text-gray-500 bg-white touch-manipulation transition-all"
+                placeholder={"Deceased Person or Facilities"}
+                className="w-full pl-12 pr-24 py-3 sm:py-3.5 border-2 border-gray-300 rounded-lg sm:rounded-xl focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-200 text-base sm:text-lg text-gray-900 placeholder:text-gray-500 bg-white touch-manipulation transition-all"
                 autoComplete="off"
                 aria-label="Search for graves using natural language"
               />
@@ -1139,6 +1050,7 @@ export default function GraveLocatorPage() {
                   onClick={() => {
                     setSearchQuery('');
                     setSearchResults([]);
+                    setFacilityResults([]);
                     setShowSearchResults(false);
                   }}
                   className="absolute right-2 top-1/2 -translate-y-1/2 bg-gray-200 hover:bg-gray-300 active:bg-gray-400 text-gray-700 p-2.5 rounded-lg transition-colors touch-manipulation"
@@ -1152,7 +1064,7 @@ export default function GraveLocatorPage() {
             </div>
 
             {/* Search Results */}
-            {showSearchResults && searchResults.length > 0 && (
+            {showSearchResults && (searchResults.length > 0 || facilityResults.length > 0) && (
               <div className="absolute top-full left-0 right-0 mt-2 bg-white border-2 border-gray-300 rounded-lg sm:rounded-xl shadow-xl max-h-[70vh] overflow-hidden z-[100] flex flex-col">
                 {/* Results header with count */}
                 <div className="px-4 py-2 bg-green-50 border-b-2 border-green-200 flex-shrink-0">
@@ -1160,10 +1072,15 @@ export default function GraveLocatorPage() {
                     <div className="text-sm font-semibold text-green-900">
                       {totalResults > 0 ? (
                         <>
-                          Showing {((currentPage - 1) * 20) + 1}-{Math.min(currentPage * 20, totalResults)} of {totalResults} results
+                          Showing {((currentPage - 1) * 20) + 1}-{Math.min(currentPage * 20, totalResults)} of {totalResults} deceased results
                         </>
                       ) : (
-                        `${searchResults.length} results found`
+                        `${searchResults.length} deceased results found`
+                      )}
+                      {facilityResults.length > 0 && (
+                        <>
+                          <span className="ml-2 text-blue-900">{facilityResults.length} facility results found</span>
+                        </>
                       )}
                     </div>
                     {aiEnabled && (
@@ -1188,6 +1105,7 @@ export default function GraveLocatorPage() {
 
                 {/* Scrollable results */}
                 <div className="overflow-y-auto flex-1">
+                  {/* Deceased results */}
                   {searchResults.map((result, index) => (
                     <button
                       key={`result-${result.deceased_id}-${index}`}
@@ -1223,9 +1141,39 @@ export default function GraveLocatorPage() {
                       </div>
                     </button>
                   ))}
+
+                  {/* Facility results */}
+                  {facilityResults.map((facility, index) => (
+                    <button
+                      key={`facility-${facility.id}-${index}`}
+                      onClick={() => handleSelectFacilityResult(facility)}
+                      className="w-full p-3 sm:p-4 text-left hover:bg-blue-50 active:bg-blue-100 border-b border-gray-200 last:border-b-0 transition-colors touch-manipulation"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <div className="font-bold text-blue-900 text-base sm:text-lg truncate">
+                              {facility.name}
+                            </div>
+                            <span className="inline-flex items-center px-1.5 py-0.5 bg-blue-100 text-blue-700 text-xs font-semibold rounded">
+                              {facility.facility_type}
+                            </span>
+                          </div>
+                          <div className="text-xs sm:text-sm text-gray-600 mt-1 space-y-1">
+                            <div className="truncate">
+                              <span className="font-semibold">Description:</span> {facility.description}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="ml-2 text-blue-600 font-medium text-xs sm:text-sm whitespace-nowrap flex-shrink-0">
+                          View →
+                        </div>
+                      </div>
+                    </button>
+                  ))}
                 </div>
 
-                {/* Pagination Controls */}
+                {/* Pagination Controls (for deceased only) */}
                 {totalPages > 1 && (
                   <div className="px-4 py-3 bg-gray-50 border-t-2 border-gray-200 flex items-center justify-between flex-shrink-0">
                     <button
@@ -1260,7 +1208,7 @@ export default function GraveLocatorPage() {
               </div>
             )}
 
-            {showSearchResults && searchResults.length === 0 && !isSearching && (
+            {showSearchResults && searchResults.length === 0 && facilityResults.length === 0 && !isSearching && (
               <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-300 rounded-lg sm:rounded-xl shadow-xl p-4 sm:p-6 z-[100]">
                 <div className="text-center">
                   <svg className="w-12 h-12 mx-auto text-gray-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1292,17 +1240,7 @@ export default function GraveLocatorPage() {
                     </div>
                   )}
                   
-                  <div className="mt-4 text-left bg-gray-50 rounded-lg p-3 text-xs text-gray-600">
-                    <p className="font-semibold mb-2">Search tips / Mga tip sa paghahanap:</p>
-                    <ul className="space-y-1 list-disc list-inside">
-                      <li>Try full names: "John Smith" / Buong pangalan: "Juan dela Cruz"</li>
-                      <li>Use dates/years: "2020", "January 2020", "2020-2026"</li>
-                      <li>By month: "January", "December 2020", "January-March"</li>
-                      <li>Filipino: "Enero 2020", "mula 2020 hanggang 2026"</li>
-                      <li>Natural language: "Find Mary died 2020" / "Hanap si Maria namatay 2020"</li>
-                      <li>Check spelling / Suriin ang spelling</li>
-                    </ul>
-                  </div>
+                  {/* ...existing code... */}
                 </div>
               </div>
             )}
@@ -1693,6 +1631,7 @@ export default function GraveLocatorPage() {
             userLocation={userLocation}
             route={route}
             centerCoordinates={centerCoordinates}
+            highlightedFacility={highlightedFacility}
             userHeading={userHeading}
             currentInstruction={routeInfo && routeInfo.instructions[currentInstructionIndex] ? routeInfo.instructions[currentInstructionIndex] : null}
             voiceNavigationEnabled={voiceNavigationEnabled}
@@ -1703,3 +1642,5 @@ export default function GraveLocatorPage() {
     </div>
   );
 }
+
+// (removed misplaced handler; actual handler now inside component)

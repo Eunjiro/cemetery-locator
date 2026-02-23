@@ -165,6 +165,7 @@ interface GraveLocatorMapProps {
   currentInstruction?: { instruction: string; distance: number } | null;
   voiceNavigationEnabled?: boolean;
   onToggleVoice?: () => void;
+  highlightedFacility?: any | null;
 }
 
 export default function GraveLocatorMap({ 
@@ -178,6 +179,7 @@ export default function GraveLocatorMap({
   currentInstruction = null,
   voiceNavigationEnabled = false,
   onToggleVoice,
+  highlightedFacility = null,
 }: GraveLocatorMapProps) {
   const [isMounted, setIsMounted] = useState(false);
   const [map, setMap] = useState<L.Map | null>(null);
@@ -435,10 +437,8 @@ export default function GraveLocatorMap({
         {highlightedPlotId && (() => {
           const highlightedPlot = plots.find(p => p.id === highlightedPlotId);
           if (!highlightedPlot) return null;
-
           const coords = highlightedPlot.map_coordinates;
           if (!coords || !Array.isArray(coords) || coords.length === 0) return null;
-
           return (
             <Polygon
               positions={coords}
@@ -452,6 +452,20 @@ export default function GraveLocatorMap({
             />
           );
         })()}
+
+        {/* Highlighted Facility Polygon */}
+        {highlightedFacility && highlightedFacility.map_coordinates && Array.isArray(highlightedFacility.map_coordinates) && highlightedFacility.map_coordinates.length > 0 && (
+          <Polygon
+            positions={highlightedFacility.map_coordinates}
+            pathOptions={{
+              color: '#2563eb',
+              fillColor: '#2563eb',
+              fillOpacity: 0.4,
+              weight: 3,
+              opacity: 1,
+            }}
+          />
+        )}
       </MapContainer>
 
 
