@@ -109,6 +109,9 @@ function isLikelyName(word: string): boolean {
     'namatay', 'pumanaw', 'yumao', 'ipinanganak', 'siguro', 'marahil',
     'hanap', 'hanapin', 'nasaan', 'sino', 'ano', 'alin', 'saan', 'kailan',
     'asan', 'nasan', 'ayan',
+    'nakalibing', 'nakaburol', 'nakahimlay', 'inilibing', 'ilibing', 'nilibing',
+    'nailibing', 'libing', 'pinaglibingan', 'himlayan', 'nitso', 'puntod',
+    'sementeryo', 'patay', 'kamatayan', 'yumaong', 'namayapa',
     'tao', 'taong', 'pangalan', 'name', 'yung', 'yun', 'ang', 'nga',
     'pwede', 'maaari', 'gusto', 'nais', 'kailangan', 'lang', 'naman',
     'kasi', 'kung', 'kapag', 'pag', 'para', 'dahil',
@@ -719,7 +722,7 @@ export function parseNaturalLanguageQuery(query: string): SearchContext {
       .replace(/\b(can|you|could|would|please|help|me|we|find|search|look|for|show|tell|get|locate|where|who|what|when|how|is|are|was|were|do|does|have|has|been|the|a|an|to|at|in|on|of|and|or|but|from|with|this|that|it|my|your|his|her|their|he|she|they|him|them|hes|shes|its)\b/gi, '')
       .replace(/\b(hanap|hanapin|nasaan|saan|sino|si|ni|kay|ang|yung|ba|na|ng|sa|mga|ko|mo|niya|nila|natin|atin|amin|kanila|po|opo|ho|oho|asan|nasan|ayan)\b/gi, '')
       .replace(/\b(died|born|bornd|buried|passed|deceased|death|age|aged|old|years?|yrs?|taon|gulang|edad)\b/gi, '')
-      .replace(/\b(namatay|pumanaw|yumao|ipinanganak|nailibing|kamatayan|patay|libing)\b/gi, '')
+      .replace(/\b(namatay|pumanaw|yumao|ipinanganak|nailibing|nakalibing|nakaburol|nakahimlay|inilibing|ilibing|nilibing|pinaglibingan|himlayan|kamatayan|patay|libing|yumaong|namayapa)\b/gi, '')
       .replace(/\b(about|around|approximately|roughly|maybe|probably|possibly|likely|think|siguro|marahil|halos|mga|parang)\b/gi, '')
       .replace(/\b(grave|tomb|burial|plot|puntod|libingan|nitso|sementeryo|cemetery|memorial)\b/gi, '')
       .replace(/\b(record|data|someone|person|tao|any|meron|mayroon|pwede|maaari|gusto|nais|kailangan)\b/gi, '')

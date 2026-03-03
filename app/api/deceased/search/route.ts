@@ -63,11 +63,11 @@ export async function GET(request: NextRequest) {
       const cleanName = query
         .replace(/\b(can|you|could|would|please|help|me|find|search|look|for|show|tell|get|locate|where|who|what|is|are|was|were|do|does|have|has|been|the|a|an|to|at|in|on|of|and|or|but|from|with|this|that|it|my|your)\b/gi, '')
         .replace(/\b(hanap|hanapin|nasaan|saan|sino|si|ni|kay|ang|yung|ba|na|ng|sa|mga|ko|mo|po|opo)\b/gi, '')
-        .replace(/\b(died|born|bornd|buried|passed|deceased|death|namatay|ipinanganak|pumanaw|yumao|nailibing|kamatayan)\b/gi, '')
+        .replace(/\b(died|born|bornd|buried|passed|deceased|death|namatay|ipinanganak|pumanaw|yumao|nailibing|nakalibing|nakaburol|nakahimlay|inilibing|ilibing|nilibing|pinaglibingan|himlayan|kamatayan|patay|yumaong|namayapa)\b/gi, '')
         .replace(/\b(about|around|approximately|roughly|maybe|probably|possibly|think|i think|siguro|marahil)\b/gi, '')
         .replace(/\b(age|aged|old|years?|yrs?|taon|gulang|edad)\b/gi, '')
         .replace(/\b(noong|mula|hanggang|simula|dati|noon|ngayon)\b/gi, '')
-        .replace(/\b(grave|tomb|burial|plot|puntod|libingan|nitso|record|data|info|someone|person|tao)\b/gi, '')
+        .replace(/\b(grave|tomb|burial|plot|puntod|libingan|nitso|sementeryo|cemetery|memorial|record|data|info|someone|person|tao)\b/gi, '')
         .replace(/\b(19\d{2}|20\d{2})\b/g, '')
         .replace(/\b\d{1,3}\b/g, '')
         .replace(/\b(january|february|march|april|may|june|july|august|september|october|november|december|enero|pebrero|marso|abril|mayo|hunyo|hulyo|agosto|setyembre|oktubre|nobyembre|disyembre)\b/gi, '')

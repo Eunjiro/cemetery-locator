@@ -544,15 +544,19 @@ export default function GraveLocatorPage() {
     // Try to extract a name from common patterns
     const namePatterns = [
       /(?:find|search|look for|looking for|locate|show me|where is|who is)\s+(.+?)(?:\s+(?:born|died|buried|age|about|around|from|in|on|last|who|that|and|with)|$)/i,
-      /(?:hanap|hanapin|nasaan|pakihanap)\s+(?:si|ni|kay)?\s*(.+?)(?:\s+(?:namatay|ipinanganak|born|died|age|na|sa|noong)|$)/i,
-      /(?:find|hanap|where|nasaan)\s+(?:si|ni|kay|ang)?\s+(.+?)(?:\s|$)/i,
+      /(?:hanap|hanapin|nasaan|pakihanap|saan)\s+(?:nakalibing|nakaburol|nakahimlay|inilibing|nailibing)?\s*(?:si|ni|kay)?\s*(.+?)(?:\s+(?:namatay|ipinanganak|born|died|age|na|sa|noong)|$)/i,
+      /(?:find|hanap|where|nasaan|saan)\s+(?:si|ni|kay|ang)?\s+(.+?)(?:\s|$)/i,
     ];
+    
+    // Filipino burial/death words to strip from extracted names
+    const filipinoFillerWords = /\b(si|ni|kay|ang|yung|please|po|nakalibing|nakaburol|nakahimlay|inilibing|ilibing|nilibing|nailibing|libing|ilibing|namatay|pinaglibingan|himlayan|sementeryo|nitso|puntod|pumanaw|yumao|ipinanganak|patay|buried|grave|tomb|burial|cemetery)\b/gi;
     
     for (const pattern of namePatterns) {
       const match = lower.match(pattern);
       if (match) {
         const name = match[1].trim()
-          .replace(/\b(si|ni|kay|ang|yung|please|po)\b/gi, '')
+          .replace(filipinoFillerWords, '')
+          .replace(/\s+/g, ' ')
           .trim();
         if (name.length >= 2) {
           // Capitalize first letters
