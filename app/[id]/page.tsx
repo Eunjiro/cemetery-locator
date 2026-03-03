@@ -566,6 +566,117 @@ export default function GraveLocatorPage() {
     return transcript.length > 40 ? transcript.slice(0, 40) + '...' : transcript;
   };
 
+  // Generate phonetic variants for voice misrecognitions
+  // Handles common STT confusions like eun→yun, ji→gi, eo→yo, etc.
+  const generateVoiceVariants = (word: string): string[] => {
+    const lower = word.toLowerCase();
+    const variants = new Set<string>([lower]);
+
+    // Common vowel-onset confusions (STT often mishears initial vowel clusters)
+    const vowelSwaps: [RegExp, string[]][] = [
+      [/^eun/i, ['yun', 'youn', 'un', 'eon', 'on', 'jun']],
+      [/^eon/i, ['yun', 'eun', 'un', 'yon', 'on', 'jon']],
+      [/^yun/i, ['eun', 'eon', 'un', 'yon', 'jun']],
+      [/^yon/i, ['eon', 'eun', 'yun', 'un', 'jon']],
+      [/^youn/i, ['eun', 'yun', 'un', 'eon', 'jun']],
+      [/^un/i, ['eun', 'yun', 'eon', 'yon']],
+      [/^on/i, ['eun', 'yun', 'eon', 'yon', 'un']],
+      [/^eu/i, ['yu', 'you', 'u', 'eo', 'yo', 'ju']],
+      [/^eo/i, ['yo', 'eu', 'yu', 'u', 'jo']],
+      [/^yo/i, ['eo', 'eu', 'yu', 'u', 'jo']],
+      [/^yu/i, ['eu', 'eo', 'yo', 'u', 'ju']],
+    ];
+
+    for (const [pattern, replacements] of vowelSwaps) {
+      if (pattern.test(lower)) {
+        const rest = lower.replace(pattern, '');
+        for (const rep of replacements) {
+          variants.add(rep + rest);
+        }
+      }
+    }
+
+    // Mid-word vowel confusions
+    const midVowelSwaps: [string, string][] = [
+      ['eu', 'u'], ['eu', 'yu'], ['eu', 'eo'],
+      ['eo', 'yo'], ['eo', 'eu'], ['eo', 'o'],
+      ['ou', 'u'], ['ou', 'oo'],
+      ['ai', 'ei'], ['ei', 'ai'],
+      ['ae', 'ay'], ['ay', 'ae'],
+      ['ie', 'ee'], ['ee', 'ie'],
+    ];
+    for (const [from, to] of midVowelSwaps) {
+      if (lower.includes(from)) {
+        variants.add(lower.replace(from, to));
+      }
+    }
+
+    // Consonant confusions common in STT
+    const consonantSwaps: [string, string][] = [
+      ['ji', 'gi'], ['gi', 'ji'], ['ji', 'hi'], ['hi', 'ji'],
+      ['ge', 'je'], ['je', 'ge'], ['ge', 'he'], ['he', 'ge'],
+      ['ro', 'lo'], ['lo', 'ro'],
+      ['ri', 'li'], ['li', 'ri'],
+      ['ph', 'f'], ['f', 'ph'],
+      ['v', 'b'], ['b', 'v'],
+      ['ch', 'sh'], ['sh', 'ch'],
+      ['c', 'k'], ['k', 'c'],
+      ['z', 's'], ['s', 'z'],
+      ['th', 't'], ['d', 't'], ['t', 'd'],
+      ['n', 'ng'], ['ng', 'n'],
+    ];
+
+    for (const [from, to] of consonantSwaps) {
+      if (lower.includes(from)) {
+        variants.add(lower.replace(from, to));
+      }
+    }
+
+    // Double vowel simplification (STT sometimes adds/removes extra vowels)
+    variants.add(lower.replace(/([aeiou])\1/g, '$1'));
+
+    return [...variants].slice(0, 15);
+  };
+
+  // Normalize a voice transcript: extract name, generate all phonetic alternatives
+  const normalizeVoiceTranscript = (transcripts: string[]): string[] => {
+    const allQueries = new Set<string>();
+
+    for (const transcript of transcripts) {
+      // Add raw transcript
+      allQueries.add(transcript);
+
+      // Extract the name portion from the transcript
+      const nameStr = getAssistantSearchMessage(transcript).toLowerCase();
+      allQueries.add(nameStr);
+
+      // Split into name parts and generate variants for each
+      const parts = nameStr.split(/\s+/).filter(p => p.length >= 2);
+      if (parts.length === 0) continue;
+
+      // Generate variants for each name part
+      const partVariants = parts.map(p => generateVoiceVariants(p));
+
+      // For single-name queries, add all variants directly
+      if (parts.length === 1) {
+        for (const v of partVariants[0]) {
+          allQueries.add(v);
+        }
+      } else {
+        // For multi-word names, combine first-name variants with last-name variants
+        const firstVars = partVariants[0].slice(0, 6);
+        const lastVars = partVariants.length > 1 ? partVariants[partVariants.length - 1].slice(0, 6) : [''];
+        for (const fv of firstVars) {
+          for (const lv of lastVars) {
+            allQueries.add(lv ? `${fv} ${lv}` : fv);
+          }
+        }
+      }
+    }
+
+    return [...allQueries].slice(0, 20);
+  };
+
   const dismissAssistant = () => {
     setAssistantState('idle');
     setAssistantMessage('');
@@ -588,7 +699,7 @@ export default function GraveLocatorPage() {
     // Configure recognition
     recognition.continuous = false;
     recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
+    recognition.maxAlternatives = 5;
     recognition.lang = voiceLang;
     
     recognition.onstart = () => {
@@ -599,47 +710,81 @@ export default function GraveLocatorPage() {
     };
     
     recognition.onresult = async (event: any) => {
-      const transcript = event.results[0][0].transcript;
-      setSearchQuery(transcript);
+      // Collect all STT alternatives
+      const alternatives: string[] = [];
+      for (let i = 0; i < event.results[0].length; i++) {
+        alternatives.push(event.results[0][i].transcript);
+      }
+      const bestTranscript = alternatives[0];
+      setSearchQuery(bestTranscript);
       setIsListening(false);
-      setAssistantTranscript(transcript);
+      setAssistantTranscript(bestTranscript);
       
       // Switch to processing state with friendly message
-      const searchTarget = getAssistantSearchMessage(transcript);
+      const searchTarget = getAssistantSearchMessage(bestTranscript);
       setAssistantState('processing');
       setAssistantMessage(voiceLang === 'fil-PH' 
         ? `Hinahanap si ${searchTarget}...` 
         : `Finding ${searchTarget}...`);
       
-      // Perform the search
+      // Generate all phonetic variants from alternatives
+      const voiceVariants = normalizeVoiceTranscript(alternatives);
+      
+      // Perform the search with all variants in parallel, merge results
       try {
-        const response = await fetch(
-          `/api/deceased/search?q=${encodeURIComponent(transcript)}&cemetery_id=${cemeteryId}&page=1&pageSize=20`
+        // Search with top variants (limit to avoid too many requests)
+        const searchQueries = voiceVariants.slice(0, 8);
+        const searchPromises = searchQueries.map(q => 
+          fetch(`/api/deceased/search?q=${encodeURIComponent(q)}&cemetery_id=${cemeteryId}&page=1&pageSize=20`)
+            .then(r => r.json())
+            .catch(() => ({ results: [] }))
         );
-        const data = await response.json();
-        const results = data.results || [];
         
-        setSearchResults(results);
-        setAiEnabled(data.aiEnabled || false);
-        setSearchSuggestions(data.suggestions || []);
-        setSearchInterpretation(data.interpretation || '');
-        setShowSearchResults(true);
-        setAssistantResultCount(results.length);
+        const allResponses = await Promise.all(searchPromises);
         
-        if (data.pagination) {
-          setCurrentPage(data.pagination.page);
-          setTotalPages(data.pagination.totalPages);
-          setTotalResults(data.pagination.totalResults);
-          setHasNextPage(data.pagination.hasNextPage);
-          setHasPrevPage(data.pagination.hasPrevPage);
+        // Merge and deduplicate results by deceased_id
+        const seenIds = new Set<number>();
+        const mergedResults: any[] = [];
+        let bestAiEnabled = false;
+        let bestSuggestions: string[] = [];
+        let bestInterpretation = '';
+        let bestPagination: any = null;
+        
+        for (const data of allResponses) {
+          if (data.aiEnabled) bestAiEnabled = true;
+          if (data.suggestions?.length > bestSuggestions.length) bestSuggestions = data.suggestions;
+          if (data.interpretation && !bestInterpretation) bestInterpretation = data.interpretation;
+          if (data.pagination && !bestPagination) bestPagination = data.pagination;
+          
+          for (const result of (data.results || [])) {
+            if (!seenIds.has(result.deceased_id)) {
+              seenIds.add(result.deceased_id);
+              mergedResults.push(result);
+            }
+          }
         }
         
-        if (results.length > 0) {
-          const topResult = results[0];
+        setSearchResults(mergedResults);
+        setAiEnabled(bestAiEnabled);
+        setSearchSuggestions(bestSuggestions);
+        setSearchInterpretation(bestInterpretation);
+        setShowSearchResults(true);
+        setAssistantResultCount(mergedResults.length);
+        
+        if (bestPagination) {
+          setCurrentPage(bestPagination.page);
+          setTotalPages(bestPagination.totalPages);
+          setTotalResults(mergedResults.length);
+          setHasNextPage(bestPagination.hasNextPage);
+          setHasPrevPage(bestPagination.hasPrevPage);
+        }
+        
+        if (mergedResults.length > 0) {
+          const topResult = mergedResults[0];
           setAssistantState('found');
           setAssistantMessage(voiceLang === 'fil-PH'
-            ? `Natagpuan ko si ${topResult.first_name} ${topResult.last_name}${results.length > 1 ? ` at ${results.length - 1} pa` : ''}`
-            : `Found ${topResult.first_name} ${topResult.last_name}${results.length > 1 ? ` and ${results.length - 1} more` : ''}`);
+            ? `Natagpuan ko si ${topResult.first_name} ${topResult.last_name}${mergedResults.length > 1 ? ` at ${mergedResults.length - 1} pa` : ''}`
+            : `Found ${topResult.first_name} ${topResult.last_name}${mergedResults.length > 1 ? ` and ${mergedResults.length - 1} more` : ''}`);
         } else {
           setAssistantState('not-found');
           setAssistantMessage(voiceLang === 'fil-PH'
@@ -800,6 +945,7 @@ export default function GraveLocatorPage() {
     if (typeof window !== 'undefined' && 'speechSynthesis' in window && (voiceNavigationEnabled || force)) {
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = 'fil-PH';
       utterance.rate = 0.9;
       utterance.pitch = 1;
       utterance.volume = 1;
@@ -867,8 +1013,8 @@ export default function GraveLocatorPage() {
     // Speak instruction when within 50 meters and haven't spoken it yet
     if (distanceToWaypoint < 50 && lastSpokenIndex !== currentInstructionIndex) {
       const distanceText = currentInstruction.distance > 100
-        ? `in ${Math.round(currentInstruction.distance)} meters`
-        : 'now';
+        ? `sa ${Math.round(currentInstruction.distance)} metro`
+        : 'ngayon';
 
       speakInstruction(`${currentInstruction.instruction} ${distanceText}`);
       setLastSpokenIndex(currentInstructionIndex);
@@ -887,12 +1033,12 @@ export default function GraveLocatorPage() {
       setCurrentInstructionIndex(0);
       setLastSpokenIndex(-1);
       // Use force=true because state hasn't updated yet
-      speakInstruction('Voice navigation started. Follow the instructions.', true);
+      speakInstruction('Nagsimula na ang boses na nabigasyon. Sundan ang mga tagubilin.', true);
       // Speak the first instruction after a short delay
       const firstInstruction = routeInfo.instructions[0];
       if (firstInstruction) {
         setTimeout(() => {
-          speakInstruction(`${firstInstruction.instruction}, ${Math.round(firstInstruction.distance)} meters`, true);
+          speakInstruction(`${firstInstruction.instruction}, ${Math.round(firstInstruction.distance)} metro`, true);
         }, 2500);
       }
     } else {
@@ -901,7 +1047,7 @@ export default function GraveLocatorPage() {
       if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
         window.speechSynthesis.cancel();
       }
-      speakInstruction('Voice navigation stopped.', true);
+      speakInstruction('Huminto na ang boses na nabigasyon.', true);
     }
   };
 

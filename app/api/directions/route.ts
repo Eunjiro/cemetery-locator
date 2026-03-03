@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify({
         coordinates: [startCoords, endCoords],
         instructions: true,
-        language: 'en',
+        language: 'tl',
       }),
     });
 
