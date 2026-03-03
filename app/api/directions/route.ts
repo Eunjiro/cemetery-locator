@@ -3,6 +3,81 @@ import { NextRequest, NextResponse } from 'next/server';
 const ORS_API_KEY = process.env.NEXT_PUBLIC_OPENROUTESERVICE_API_KEY || '';
 const ORS_BASE_URL = 'https://api.openrouteservice.org';
 
+/**
+ * Translate an English ORS navigation instruction to Filipino
+ */
+function translateToFilipino(instruction: string): string {
+  let text = instruction;
+
+  // Handle dynamic patterns first (with callback replacements)
+  text = text.replace(/\bHead (north|south|east|west|northeast|northwest|southeast|southwest)\b/gi, 
+    (_m: string, dir: string) => `Pumunta sa ${translateDirection(dir)}`);
+  text = text.replace(/\bAt the roundabout, take the (\d+)\w+ exit\b/gi, 
+    (_m: string, n: string) => `Sa rotonda, kunin ang pang-${n} labasan`);
+
+  // Static phrase translations (order matters - longer phrases first)
+  const translations: [RegExp, string][] = [
+    // Turns
+    [/\bTurn sharp right\b/gi, 'Lumiko nang matarik sa kanan'],
+    [/\bTurn sharp left\b/gi, 'Lumiko nang matarik sa kaliwa'],
+    [/\bTurn slight right\b/gi, 'Lumiko nang bahagya sa kanan'],
+    [/\bTurn slight left\b/gi, 'Lumiko nang bahagya sa kaliwa'],
+    [/\bTurn right\b/gi, 'Lumiko sa kanan'],
+    [/\bTurn left\b/gi, 'Lumiko sa kaliwa'],
+    [/\bKeep right\b/gi, 'Manatili sa kanan'],
+    [/\bKeep left\b/gi, 'Manatili sa kaliwa'],
+    [/\bKeep straight\b/gi, 'Dumiretso'],
+    // Go
+    [/\bGo straight\b/gi, 'Dumiretso'],
+    [/\bContinue straight\b/gi, 'Magpatuloy nang diretso'],
+    [/\bContinue\b/gi, 'Magpatuloy'],
+    [/\bProceed\b/gi, 'Magpatuloy'],
+    // Arrival
+    [/\bArrive at your destination, on the right\b/gi, 'Narating mo na ang iyong destinasyon, sa kanan'],
+    [/\bArrive at your destination, on the left\b/gi, 'Narating mo na ang iyong destinasyon, sa kaliwa'],
+    [/\bArrive at your destination\b/gi, 'Narating mo na ang iyong destinasyon'],
+    [/\bYou have arrived at your destination\b/gi, 'Narating mo na ang iyong destinasyon'],
+    [/\bDestination reached\b/gi, 'Narating na ang destinasyon'],
+    // Start
+    [/\bStart\b/gi, 'Magsimula'],
+    [/\bDepart\b/gi, 'Umalis'],
+    // Roundabout
+    [/\bEnter the roundabout\b/gi, 'Pumasok sa rotonda'],
+    [/\bExit the roundabout\b/gi, 'Lumabas sa rotonda'],
+    // U-turn
+    [/\bMake a U-turn\b/gi, 'Mag-U-turn'],
+    [/\bU-turn\b/gi, 'U-turn'],
+    // Connectors
+    [/\bonto\b/gi, 'papunta sa'],
+    [/\bon\b/gi, 'sa'],
+    [/\bfor about\b/gi, 'ng mga'],
+    [/\bfor\b/gi, 'ng'],
+    [/\babout\b/gi, 'mga'],
+    [/\bmeters?\b/gi, 'metro'],
+    [/\bkilometers?\b/gi, 'kilometro'],
+  ];
+
+  for (const [pattern, replacement] of translations) {
+    text = text.replace(pattern, replacement);
+  }
+
+  return text;
+}
+
+function translateDirection(dir: string): string {
+  const directions: Record<string, string> = {
+    'north': 'hilaga',
+    'south': 'timog',
+    'east': 'silangan',
+    'west': 'kanluran',
+    'northeast': 'hilaga-silangan',
+    'northwest': 'hilaga-kanluran',
+    'southeast': 'timog-silangan',
+    'southwest': 'timog-kanluran',
+  };
+  return directions[dir.toLowerCase()] || dir;
+}
+
 export async function POST(request: NextRequest) {
   try {
     if (!ORS_API_KEY) {
@@ -71,12 +146,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Translate instructions to Filipino
+    const steps = route.segments?.[0]?.steps || [];
+    const translatedSteps = steps.map((step: any) => ({
+      ...step,
+      instruction: step.instruction ? translateToFilipino(step.instruction) : step.instruction,
+    }));
+
     // Return the processed route data
     return NextResponse.json({
       distance: route.segments?.[0]?.distance || 0,
       duration: route.segments?.[0]?.duration || 0,
       coordinates: geometry.coordinates,
-      instructions: route.segments?.[0]?.steps || [],
+      instructions: translatedSteps,
     });
 
   } catch (error) {
