@@ -159,6 +159,7 @@ interface GraveLocatorMapProps {
   plots: Plot[];
   highlightedPlotId?: number | null;
   userLocation?: [number, number] | null;
+  gateLocation?: [number, number] | null;
   route?: [number, number][] | null;
   centerCoordinates?: [number, number] | null;
   userHeading?: number | null;
@@ -173,6 +174,7 @@ export default function GraveLocatorMap({
   plots, 
   highlightedPlotId = null,
   userLocation = null,
+  gateLocation = null,
   route = null,
   centerCoordinates = null,
   userHeading = null,
@@ -318,115 +320,38 @@ export default function GraveLocatorMap({
           />
         )}
 
-        {/* Navigation Route with Directional Styling */}
-        {route && route.length > 0 && userLocation && (
-          <>
-            {(() => {
-              // Find the closest point on route to user location
-              let closestIndex = 0;
-              let minDistance = Infinity;
-              
-              route.forEach((point, index) => {
-                const distance = Math.sqrt(
-                  Math.pow(point[0] - userLocation[0], 2) + 
-                  Math.pow(point[1] - userLocation[1], 2)
-                );
-                if (distance < minDistance) {
-                  minDistance = distance;
-                  closestIndex = index;
-                }
-              });
-
-              // If we have heading info, determine which direction is "ahead"
-              if (userHeading !== null && route.length > closestIndex + 1) {
-                const nextPoint = route[closestIndex + 1];
-                // Calculate bearing to next point
-                const dLon = (nextPoint[1] - userLocation[1]) * Math.PI / 180;
-                const lat1 = userLocation[0] * Math.PI / 180;
-                const lat2 = nextPoint[0] * Math.PI / 180;
-                const y = Math.sin(dLon) * Math.cos(lat2);
-                const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
-                const bearing = (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
-                
-                // Check if user is facing toward or away from the route direction
-                let diff = bearing - userHeading;
-                if (diff > 180) diff -= 360;
-                if (diff < -180) diff += 360;
-                
-                // If user is facing backwards (more than 90 degrees off), flip the direction
-                if (Math.abs(diff) > 90) {
-                  // User is facing backward, so what's ahead in route is actually behind them
-                  const behind = route.slice(closestIndex);
-                  const ahead = route.slice(0, closestIndex + 1);
-                  return (
-                    <>
-                      {/* Thin line for path behind user (visually ahead in wrong direction) */}
-                      {ahead.length > 1 && (
-                        <Polyline
-                          positions={ahead}
-                          pathOptions={{
-                            color: '#94a3b8',
-                            weight: 3,
-                            opacity: 0.5,
-                          }}
-                        />
-                      )}
-                      {/* Thick line for path ahead (user needs to turn around) */}
-                      {behind.length > 1 && (
-                        <Polyline
-                          positions={behind}
-                          pathOptions={{
-                            color: '#10b981',
-                            weight: 8,
-                            opacity: 0.9,
-                          }}
-                        />
-                      )}
-                    </>
-                  );
-                }
-              }
-
-              // Normal case: ahead is forward on route, behind is backward on route
-              const behind = route.slice(0, closestIndex + 1);
-              const ahead = route.slice(closestIndex);
-              
-              return (
-                <>
-                  {/* Thin line for path already traveled (behind) */}
-                  {behind.length > 1 && (
-                    <Polyline
-                      positions={behind}
-                      pathOptions={{
-                        color: '#94a3b8',
-                        weight: 3,
-                        opacity: 0.5,
-                      }}
-                    />
-                  )}
-                  {/* Thick line for path ahead */}
-                  {ahead.length > 1 && (
-                    <Polyline
-                      positions={ahead}
-                      pathOptions={{
-                        color: '#10b981',
-                        weight: 8,
-                        opacity: 0.9,
-                      }}
-                    />
-                  )}
-                </>
-              );
-            })()}
-          </>
+        {/* Gate Location Marker */}
+        {gateLocation && (
+          <Marker
+            position={gateLocation}
+            icon={L.divIcon({
+              className: 'gate-marker',
+              html: `<div style="
+                background: #2563eb;
+                color: white;
+                border-radius: 50%;
+                width: 32px;
+                height: 32px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                border: 3px solid white;
+                box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+                font-size: 16px;
+              ">🚪</div>`,
+              iconSize: [32, 32],
+              iconAnchor: [16, 16],
+            })}
+            zIndexOffset={900}
+          />
         )}
-        
-        {/* Fallback route rendering if no user location */}
-        {route && route.length > 0 && !userLocation && (
+
+        {/* Navigation Route from Gate to Grave */}
+        {route && route.length > 0 && (
           <Polyline
             positions={route}
             pathOptions={{
-              color: '#10b981',
+              color: '#2563eb',
               weight: 6,
               opacity: 0.8,
             }}

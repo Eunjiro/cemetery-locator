@@ -51,6 +51,8 @@ export default function GraveLocatorPage() {
   const [selectedResult, setSelectedResult] = useState<any | null>(null);
   const [highlightedFacility, setHighlightedFacility] = useState<any | null>(null);
   const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
+  const [gateLocation, setGateLocation] = useState<[number, number] | null>(null);
+  const [gateFacility, setGateFacility] = useState<any | null>(null);
   const [route, setRoute] = useState<[number, number][] | null>(null);
   const [routeInfo, setRouteInfo] = useState<Route | null>(null);
   const [showDirections, setShowDirections] = useState(false);
@@ -86,6 +88,7 @@ export default function GraveLocatorPage() {
   useEffect(() => {
     fetchCemeteryData();
     fetchPlots();
+    fetchGate();
     
     // Check for voice recognition support
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -144,7 +147,7 @@ export default function GraveLocatorPage() {
 
   // Watch for navigation mode changes and recalculate route if one exists
   useEffect(() => {
-    if (showDirections && selectedResult && userLocation) {
+    if (showDirections && selectedResult && gateLocation) {
       const plot = plots.find(p => p.id === selectedResult.plot_id);
       if (plot) {
         let targetCoords: [number, number] | null = null;
@@ -202,16 +205,16 @@ export default function GraveLocatorPage() {
     }
   }, [plots, searchParams]);
 
-  // Trigger directions when coming from bookmark and user location is available
+  // Trigger directions when coming from bookmark and gate location is available
   useEffect(() => {
-    if (fromBookmark && selectedResult && userLocation && plots.length > 0) {
+    if (fromBookmark && selectedResult && gateLocation && plots.length > 0) {
       const plot = plots.find(p => p.id === selectedResult.plot_id);
       if (plot && plot.latitude && plot.longitude) {
         handleGetDirections([plot.latitude, plot.longitude]);
         setFromBookmark(false); // Reset flag
       }
     }
-  }, [fromBookmark, selectedResult, userLocation, plots]);
+  }, [fromBookmark, selectedResult, gateLocation, plots]);
 
   const requestLocation = () => {
     if (!navigator.geolocation) {
@@ -306,6 +309,33 @@ export default function GraveLocatorPage() {
     }
   };
 
+  const fetchGate = async () => {
+    try {
+      const response = await fetch(`/api/facilities?cemetery_id=${cemeteryId}&q=gate`);
+      const data = await response.json();
+      const gate = (data.facilities || []).find(
+        (f: any) => f.facility_type?.toLowerCase() === 'gate'
+      );
+      if (gate) {
+        setGateFacility(gate);
+        let coords: [number, number] | null = null;
+        if (gate.latitude && gate.longitude) {
+          coords = [gate.latitude, gate.longitude];
+        } else if (gate.map_coordinates && Array.isArray(gate.map_coordinates) && gate.map_coordinates.length > 0) {
+          // Use the centroid of the gate polygon
+          const latSum = gate.map_coordinates.reduce((sum: number, c: [number, number]) => sum + c[0], 0);
+          const lngSum = gate.map_coordinates.reduce((sum: number, c: [number, number]) => sum + c[1], 0);
+          coords = [latSum / gate.map_coordinates.length, lngSum / gate.map_coordinates.length];
+        }
+        if (coords) {
+          setGateLocation(coords);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching gate facility:', error);
+    }
+  };
+
   const performSearch = async (query: string, page: number = 1) => {
     if (!query.trim()) {
       setSearchResults([]);
@@ -375,7 +405,7 @@ export default function GraveLocatorPage() {
     saveToSearchHistory(result);
     
     const plot = plots.find(p => p.id === result.plot_id);
-    if (plot && plot.latitude && plot.longitude && userLocation) {
+    if (plot && plot.latitude && plot.longitude && gateLocation) {
       handleGetDirections([plot.latitude, plot.longitude]);
     }
   };
@@ -410,7 +440,7 @@ export default function GraveLocatorPage() {
       }
     }
 
-    if (destination && userLocation) {
+    if (destination && gateLocation) {
       // clear any highlighted plot
       setHighlightedPlotId(null);
       handleGetDirections(destination);
@@ -673,8 +703,8 @@ export default function GraveLocatorPage() {
   };
 
   const handleGetDirections = async (destination: [number, number]) => {
-    if (!userLocation) {
-      alert('Please enable location access to get directions');
+    if (!gateLocation) {
+      alert('No gate facility found for this cemetery. Please add a gate facility first.');
       return;
     }
 
@@ -684,7 +714,7 @@ export default function GraveLocatorPage() {
 
     try {
       const routeData = await getDirections(
-        userLocation,
+        gateLocation,
         destination,
         navigationMode
       );
@@ -935,6 +965,23 @@ export default function GraveLocatorPage() {
               <svg className="hidden sm:block w-16 h-16 sm:w-24 sm:h-24 ml-4 opacity-50" fill="currentColor" viewBox="0 0 20 20">
                 <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
               </svg>
+            </div>
+          </div>
+        )}
+
+        {/* No Gate Warning */}
+        {!gateLocation && !loading && (
+          <div className="mb-3 sm:mb-4 bg-amber-50 border-l-4 border-amber-500 rounded p-3 sm:p-4">
+            <div className="flex items-start">
+              <svg className="w-5 h-5 text-amber-600 mr-2 sm:mr-3 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              <div>
+                <h3 className="font-medium text-amber-900 text-sm sm:text-base">No Gate Found</h3>
+                <p className="text-xs sm:text-sm text-amber-800 mt-1">
+                  Navigation requires a gate facility. Please add a facility with type &quot;gate&quot; to enable directions from the cemetery entrance to graves.
+                </p>
+              </div>
             </div>
           </div>
         )}
@@ -1478,7 +1525,7 @@ export default function GraveLocatorPage() {
             </div>
 
             {/* Get Directions Button */}
-            {userLocation && !showDirections && (
+            {gateLocation && !showDirections && (
               <button
                 onClick={() => {
                   const plot = plots.find(p => p.id === selectedResult.plot_id);
@@ -1524,10 +1571,17 @@ export default function GraveLocatorPage() {
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
                     </svg>
-                    Get Directions
+                    Get Directions from Gate
                   </>
                 )}
               </button>
+            )}
+
+            {/* No gate info for directions */}
+            {!gateLocation && !showDirections && (
+              <p className="text-xs text-amber-700 text-center mt-2">
+                Add a &quot;gate&quot; facility to enable navigation from the cemetery entrance.
+              </p>
             )}
           </div>
         )}
@@ -1536,7 +1590,12 @@ export default function GraveLocatorPage() {
         {routeInfo && showDirections && (
           <div className="mb-3 sm:mb-4 bg-white border-2 border-gray-300 rounded-lg sm:rounded-xl p-3 sm:p-4">
             <div className="flex items-center justify-between mb-2">
-              <h3 className="font-bold text-gray-900 text-sm sm:text-base">Navigation Instructions</h3>
+              <div>
+                <h3 className="font-bold text-gray-900 text-sm sm:text-base">Navigation Instructions</h3>
+                {gateFacility && (
+                  <p className="text-xs text-gray-500">From: {gateFacility.name || 'Cemetery Gate'}</p>
+                )}
+              </div>
               {/* Voice Navigation Toggle */}
               {hasSpeechSynthesis && (
                 <button
@@ -1629,6 +1688,7 @@ export default function GraveLocatorPage() {
             plots={plots}
             highlightedPlotId={highlightedPlotId}
             userLocation={userLocation}
+            gateLocation={gateLocation}
             route={route}
             centerCoordinates={centerCoordinates}
             highlightedFacility={highlightedFacility}
